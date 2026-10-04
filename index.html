@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coach Échecs</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>♞ Coach Échecs</h1>
+      <p class="sub">Analyse de vos parties chess.com : ouvertures, gestion du temps, stratégie — et un plan d'entraînement avec exercices et cours Chessable.</p>
+      <form id="form" class="form">
+        <label class="field grow">
+          <span>Pseudo chess.com</span>
+          <input id="username" name="username" required autocomplete="off" placeholder="ex. MagnusCarlsen">
+        </label>
+        <label class="field">
+          <span>Période</span>
+          <select id="months">
+            <option value="1">1 mois</option>
+            <option value="3" selected>3 mois</option>
+            <option value="6">6 mois</option>
+            <option value="12">12 mois</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Max. parties</span>
+          <select id="maxGames">
+            <option>100</option>
+            <option selected>300</option>
+            <option>600</option>
+          </select>
+        </label>
+        <fieldset class="field cadences">
+          <span>Cadences</span>
+          <div>
+            <label><input type="checkbox" name="tc" value="bullet"> Bullet</label>
+            <label><input type="checkbox" name="tc" value="blitz" checked> Blitz</label>
+            <label><input type="checkbox" name="tc" value="rapid" checked> Rapide</label>
+            <label><input type="checkbox" name="tc" value="daily"> Différé</label>
+          </div>
+        </fieldset>
+        <button id="go" class="primary" type="submit">Analyser mes parties</button>
+      </form>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </div>
+  </header>
+
+  <main id="results" class="wrap" hidden>
+    <section>
+      <h2>Vue d'ensemble</h2>
+      <div id="overview" class="tiles"></div>
+      <div id="ratings" class="ratings"></div>
+    </section>
+
+    <section>
+      <h2>Votre plan d'entraînement</h2>
+      <p class="muted">Les trois chantiers prioritaires, d'après vos parties.</p>
+      <ol id="plan" class="plan"></ol>
+    </section>
+
+    <section>
+      <h2>Axes de progression</h2>
+      <div id="tabs" class="tabs" role="tablist"></div>
+      <div id="insights" class="cards"></div>
+    </section>
+
+    <section id="strengthsSection">
+      <h2>Vos points forts</h2>
+      <ul id="strengths" class="strengths"></ul>
+    </section>
+
+    <section>
+      <h2>Vos ouvertures</h2>
+      <div class="two-col">
+        <div><h3>Avec les Blancs</h3><div id="openingsW"></div></div>
+        <div><h3>Avec les Noirs</h3><div id="openingsB"></div></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Analyse Stockfish et exercices personnalisés</h2>
+      <p class="muted">Le moteur tourne dans votre navigateur. Il rejoue vos défaites coup par coup, détecte vos gaffes et en fait des exercices : retrouvez le coup que vous auriez dû jouer.</p>
+      <div class="form inline">
+        <label class="field">
+          <span>Parties à analyser</span>
+          <select id="engineGames">
+            <option value="5">5 dernières défaites</option>
+            <option value="10" selected>10 dernières défaites</option>
+            <option value="20">20 dernières défaites</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Profondeur</span>
+          <select id="engineDepth">
+            <option value="8">Rapide (8)</option>
+            <option value="11" selected>Normale (11)</option>
+            <option value="14">Précise (14)</option>
+          </select>
+        </label>
+        <button id="engineGo" class="primary" type="button">Lancer l'analyse</button>
+      </div>
+      <p id="engineStatus" class="status" role="status" aria-live="polite"></p>
+      <div id="puzzles" hidden>
+        <div class="puzzle">
+          <div id="board"></div>
+          <div class="puzzle-side">
+            <p id="puzzleCount" class="muted"></p>
+            <h3 id="puzzleTitle"></h3>
+            <p id="puzzleInfo"></p>
+            <p id="puzzleFeedback" class="feedback"></p>
+            <div class="buttons">
+              <button id="prevPuzzle" type="button">← Précédent</button>
+              <button id="solution" type="button">Solution</button>
+              <button id="nextPuzzle" type="button">Suivant →</button>
+            </div>
+            <p class="links" id="puzzleLinks"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    Données : API publique chess.com · Moteur : Stockfish (GPL) · Règles : chess.js
+  </footer>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
