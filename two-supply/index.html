@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Two Supply">
+<meta name="theme-color" content="#0e1115">
+<meta name="description" content="Two Supply — prototype de jeu coopératif à deux téléphones.">
+<title>Two Supply — prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+
+<div id="hud" hidden>
+  <div class="hud-tl">
+    <div class="contract">
+      <div class="contract-head"><span>Contrat</span><b>Cantine du village</b></div>
+      <div class="bar"><i id="contract-fill"></i></div>
+      <div class="contract-foot"><span id="contract-count">0 / 5 pains</span><span id="contract-miss"></span></div>
+    </div>
+    <div id="orders"></div>
+  </div>
+  <div class="hud-tc"><div id="objective"></div></div>
+  <div class="hud-tr">
+    <div id="role-chip"><i class="dot"></i><span id="role-name"></span></div>
+    <button id="btn-carnet" class="chip-btn" type="button">Carnet</button>
+    <i id="net-dot" title="Connexion"></i>
+  </div>
+  <div id="stick-zone">
+    <div id="stick-base"><div id="stick-knob"></div></div>
+    <div id="stick-hint">Glisse ici pour bouger</div>
+  </div>
+  <div class="hud-br">
+    <button id="btn-call" class="round small" type="button" aria-label="Appeler ton partenaire">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4zm12.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
+      <span>Appeler</span>
+    </button>
+    <button id="btn-action" class="round big" type="button">
+      <span class="act-icon" id="action-icon"></span>
+      <span id="action-label">Action</span>
+    </button>
+  </div>
+  <div id="toasts"></div>
+  <div id="edge-arrow"><svg viewBox="0 0 24 24"><path d="M4 12l14-8v16z"/></svg></div>
+  <div id="rotate"><span>Tourne ton téléphone à l’horizontale pour plus de confort.</span><button type="button" id="btn-rotate-ok">OK</button></div>
+</div>
+
+<section id="screen-home" class="screen active">
+  <div class="home-wrap">
+    <div class="brand">
+      <div class="hazard"></div>
+      <h1>TWO<span>SUPPLY</span></h1>
+      <p class="tag">Prototype 0.1 · une usine, deux joueurs, aucune chance seul</p>
+    </div>
+    <div class="home-actions">
+      <button id="btn-host" class="btn primary" type="button">Créer une partie</button>
+      <div class="or"><span>ou</span></div>
+      <div class="join-row">
+        <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" aria-label="Code de la partie">
+        <button id="btn-join" class="btn" type="button">Rejoindre</button>
+      </div>
+      <p id="home-msg" class="msg" role="status"></p>
+    </div>
+  </div>
+  <p class="fine">Deux téléphones, un lien : le premier crée la partie, le second scanne le QR code ou tape le code.</p>
+</section>
+
+<section id="screen-wait" class="screen">
+  <div class="panel">
+    <h2>Partie créée</h2>
+    <p class="sub">Ton partenaire scanne ce QR code avec l’appareil photo, ou ouvre le lien et tape le code.</p>
+    <div class="wait-grid">
+      <div id="qr" aria-label="QR code de la partie"></div>
+      <div class="code-box"><span>Code</span><b id="wait-code">····</b></div>
+    </div>
+    <div class="row">
+      <button id="btn-share" class="btn" type="button">Envoyer le lien</button>
+      <button id="btn-cancel" class="btn ghost" type="button">Annuler</button>
+    </div>
+    <p class="msg" id="wait-msg" role="status">En attente du deuxième joueur…</p>
+  </div>
+</section>
+
+<section id="screen-roles" class="screen">
+  <div class="panel wide">
+    <h2>Choisissez vos métiers</h2>
+    <p class="sub">Un métier chacun. Vous n’aurez pas les mêmes informations : il faudra vous parler.</p>
+    <div class="roles">
+      <button class="role-card" data-role="inge" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7 7 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7 7 0 0 0-1.7 1l-2.5-1-2 3.5L6.5 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7 7 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7 7 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+        <h3>Ingénieur</h3>
+        <p>Construit, visse et répare 2× plus vite. Voit les plans de montage.</p>
+        <span class="claim"></span>
+      </button>
+      <button class="role-card" data-role="chef" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 13.5A4 4 0 0 1 7.5 6a5 5 0 0 1 9 0 4 4 0 0 1 1.5 7.5V17H6zM6 18.5h12V21H6z"/></svg>
+        <h3>Chef de production</h3>
+        <p>Pétrit 2× plus vite. Seul à connaître les recettes.</p>
+        <span class="claim"></span>
+      </button>
+    </div>
+    <p class="msg" id="roles-msg" role="status"></p>
+  </div>
+</section>
+
+<section id="screen-howto" class="screen overlay">
+  <div class="panel">
+    <h2>Avant de commencer</h2>
+    <ol class="tips">
+      <li><b>Bouger :</b> glisse le pouce sur la moitié gauche de l’écran. <b>Agir :</b> le gros bouton à droite. Certaines actions se font en <b>gardant appuyé</b>.</li>
+      <li><span class="badge solo"></span> blanc : tu peux le faire <b>seul</b>. <span class="badge duo"></span> doré à bandes : il faut être <b>deux</b>.</li>
+      <li>Vous n’avez pas les mêmes infos : <b>parlez-vous</b> ! Le bouton <b>Appeler</b> fait signe à ton partenaire.</li>
+    </ol>
+    <button id="btn-go" class="btn primary" type="button">C’est parti</button>
+  </div>
+</section>
+
+<section id="screen-carnet" class="screen overlay">
+  <div class="panel wide">
+    <h2 id="carnet-title">Carnet</h2>
+    <div id="carnet-body"></div>
+    <button id="btn-carnet-close" class="btn" type="button">Fermer</button>
+  </div>
+</section>
+
+<section id="screen-win" class="screen overlay">
+  <div class="panel">
+    <div class="hazard small"></div>
+    <h2>Contrat rempli !</h2>
+    <p class="sub" id="win-stats"></p>
+    <p class="sub">Dites-moi ce qui vous a plu ou agacé : c’est ce qui guidera la prochaine version.</p>
+    <button id="btn-replay" class="btn primary" type="button">Rejouer</button>
+  </div>
+</section>
+
+<section id="screen-lost" class="screen overlay">
+  <div class="panel">
+    <h2>Connexion perdue</h2>
+    <p class="sub">Le lien avec l’autre téléphone s’est coupé (écran verrouillé, réseau…). Recréez une partie pour continuer.</p>
+    <button id="btn-home" class="btn primary" type="button">Retour à l’accueil</button>
+  </div>
+</section>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
