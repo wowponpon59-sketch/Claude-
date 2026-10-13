@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Two Supply">
+<meta name="theme-color" content="#0e1115">
+<meta name="description" content="Two Supply — Droïdes : prototype 0.2, usine de droïdes dans un terrain vague, en solo ou à deux.">
+<title>Two Supply — Droïdes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+
+<div id="hud" hidden>
+  <div id="look-zone" aria-hidden="true"></div>
+  <button id="level-card" type="button" aria-label="Objectifs du niveau">
+    <span class="lv-top"><b id="level-name"></b><span id="level-count"></span></span>
+    <span id="level-next"></span>
+    <ul id="level-goals"></ul>
+  </button>
+  <div id="stock" class="bar"></div>
+  <div class="hud-tr">
+    <div id="mode-chip"><i class="dot"></i><span id="mode-name"></span></div>
+    <button id="btn-usine" class="chip-btn" type="button">Usine</button>
+    <i id="net-dot" title="Connexion"></i>
+  </div>
+  <div id="stick-zone">
+    <div id="stick-base"><div id="stick-knob"></div></div>
+    <div id="stick-hint">Glisse ici pour marcher</div>
+  </div>
+  <div id="sac" class="bar"></div>
+  <div class="hud-br">
+    <div class="zoom">
+      <button id="btn-zin" class="round tiny" type="button" aria-label="Zoomer">+</button>
+      <button id="btn-zout" class="round tiny" type="button" aria-label="Dézoomer">−</button>
+    </div>
+    <button id="btn-call" class="round small" type="button" aria-label="Appeler ton partenaire">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4zm12.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
+      <span>Appeler</span>
+    </button>
+    <button id="btn-action" class="round big" type="button">
+      <span class="act-icon" id="action-icon"></span>
+      <span id="action-label">Action</span>
+    </button>
+  </div>
+  <div id="toasts"></div>
+  <div id="banner"></div>
+  <div id="edge-arrow"><svg viewBox="0 0 24 24"><path d="M4 12l14-8v16z"/></svg></div>
+  <div id="rotate"><span>Tourne ton téléphone à l’horizontale pour plus de confort.</span><button type="button" id="btn-rotate-ok">OK</button></div>
+</div>
+
+<section id="screen-home" class="screen active">
+  <div class="home-wrap">
+    <div class="brand">
+      <div class="hazard"></div>
+      <h1>TWO<span>SUPPLY</span></h1>
+      <p class="kicker">Droïdes · prototype 0.2</p>
+      <p class="tag">Un terrain vague, des débris, des créatures de ferraille. Construisez à la main l’usine qui fabriquera vos premiers droïdes, puis faites-en vos employés.</p>
+    </div>
+    <div class="home-actions">
+      <button id="btn-solo" class="btn primary" type="button">Jouer seul <small>avec un coéquipier IA</small></button>
+      <button id="btn-host" class="btn" type="button">Créer une partie à deux</button>
+      <div class="join-row">
+        <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Code de la partie">
+        <button id="btn-join" class="btn" type="button">Rejoindre</button>
+      </div>
+      <p id="home-msg" class="msg" role="status"></p>
+    </div>
+  </div>
+</section>
+
+<section id="screen-wait" class="screen">
+  <div class="panel">
+    <h2>Partie créée</h2>
+    <p class="sub">Ton partenaire scanne ce QR code avec l’appareil photo, ou ouvre le lien et tape le code.</p>
+    <div class="wait-grid">
+      <div id="qr" aria-label="QR code de la partie"></div>
+      <div class="code-box"><span>Code</span><b id="wait-code">····</b></div>
+    </div>
+    <div class="row">
+      <button id="btn-share" class="btn" type="button">Envoyer le lien</button>
+      <button id="btn-cancel" class="btn ghost" type="button">Annuler</button>
+    </div>
+    <p class="msg" id="wait-msg" role="status">En attente du deuxième joueur…</p>
+  </div>
+</section>
+
+<section id="screen-howto" class="screen overlay">
+  <div class="panel wide">
+    <h2>Bienvenue dans le terrain vague</h2>
+    <ol class="tips">
+      <li><b>Marcher :</b> pouce à gauche. <b>Tourner la caméra :</b> glisse ailleurs sur l’écran. <b>Zoomer :</b> pince l’écran ou boutons + et −.</li>
+      <li><b>Fouiller</b> les débris (garder appuyé) remplit ton sac : fer, verre, argile, calcaire, eau. Vide-le à l’<b>entrepôt</b>, puis apporte les matériaux aux chantiers.</li>
+      <li><span class="badge solo"></span> blanc : seul. <span class="badge duo"></span> doré à bandes : à <b>deux</b> (monter une machine, porter le cœur d’assembleur, attraper une créature).</li>
+      <li id="howto-solo">En solo, ton <b>coéquipier IA</b> te suit et prend tout seul l’autre côté des tâches à deux.</li>
+    </ol>
+    <button id="btn-go" class="btn primary" type="button">C’est parti</button>
+  </div>
+</section>
+
+<section id="screen-usine" class="screen overlay">
+  <div class="panel wide tall">
+    <div class="tabs">
+      <button class="tab on" data-tab="entrepot" type="button">Entrepôt et machines</button>
+      <button class="tab" data-tab="org" type="button">Organigramme</button>
+      <button class="tab" data-tab="betes" type="button">Créatures</button>
+    </div>
+    <div id="usine-body"></div>
+    <button id="btn-usine-close" class="btn" type="button">Fermer</button>
+  </div>
+</section>
+
+<section id="screen-spec" class="screen overlay">
+  <div class="panel wide">
+    <h2>Former un employé</h2>
+    <p class="sub">Le droïde standard reçoit un kit fabriqué avec vos matériaux (sac puis entrepôt).</p>
+    <div id="spec-body"></div>
+    <button id="btn-spec-close" class="btn ghost" type="button">Annuler</button>
+  </div>
+</section>
+
+<section id="screen-win" class="screen overlay">
+  <div class="panel">
+    <div class="hazard small"></div>
+    <h2>Prototype terminé !</h2>
+    <p class="sub" id="win-stats"></p>
+    <p class="sub">La suite de l’organigramme (agent de production, achats packaging, ingénieur process, adjoint, chef de production) arrive dans la prochaine version.</p>
+    <button id="btn-continue" class="btn primary" type="button">Continuer à jouer</button>
+  </div>
+</section>
+
+<section id="screen-lost" class="screen overlay">
+  <div class="panel">
+    <h2>Connexion perdue</h2>
+    <p class="sub">Le lien avec l’autre téléphone s’est coupé (écran verrouillé, réseau…). Recréez une partie pour continuer.</p>
+    <button id="btn-home" class="btn primary" type="button">Retour à l’accueil</button>
+  </div>
+</section>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
