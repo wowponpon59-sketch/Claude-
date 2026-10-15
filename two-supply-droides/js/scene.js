@@ -175,12 +175,13 @@ export function updateScene(S, st, view) {
         i++;
       }
     }
+    const heavyM = pst.built && st.machines[p.id] && st.machines[p.id].broken === 'heavy';
     for (const side of ['L', 'R']) {
       const r = S.rings[p.id + side];
-      r.visible = unlocked && pst.ready && !pst.built;
+      r.visible = (unlocked && pst.ready && !pst.built) || heavyM;
       if (!r.visible) continue;
       const pt = side === 'L' ? postL(p) : postR(p);
-      const who = side === 'L' ? pst.holder : null;
+      const who = heavyM ? (side === 'L' ? st.machines[p.id].cut : (['A', 'B'].find((id) => st.work[id] && st.work[id].kind === 'fixheavy' && st.work[id].mach === p.id) || null)) : (side === 'L' ? pst.holder : null);
       const near = ['A', 'B'].find((id) => Math.hypot(st.players[id].x - pt.x, st.players[id].z - pt.z) < POST_R);
       paintRing(r, who, near);
     }
@@ -196,13 +197,23 @@ export function updateScene(S, st, view) {
         a.core.mesh.mat.emissive = [0.1 * pulse * 2, 0.6 * pulse * 1.6, 0.7 * pulse * 1.6];
       }
       if (a.ring) { a.ring.rot[1] += view.dt * (m.busy ? 3 : 0.3); a.ring.pos[1] = 1.2 + (m.busy ? Math.sin(view.time * 4) * 0.3 : 0); }
+      if (a.spool && run) a.spool.rot[1] += view.dt * 5;
+      if (a.fly) { if (run) a.fly.rot[0] += view.dt * 9; a.tip.mesh.mat.emissive = run ? [0.9, 0.35 + 0.1 * Math.sin(view.time * 13), 0.05] : [0, 0, 0]; }
+      if (a.melt) a.melt.mesh.mat.emissive = run ? [1.0, 0.45 + 0.1 * Math.sin(view.time * 5), 0.05] : [0.25, 0.06, 0.0];
+      if (a.rollers && run) for (const [i, rl] of a.rollers.entries()) rl.rot[1] += view.dt * (i ? -6 : 6);
+      if (a.beam) a.beam.pos[1] = run ? 1.0 + 0.8 * (0.5 + 0.5 * Math.sin(view.time * 4)) : 1.4;
+      if (a.jaw) a.jaw.pos[1] = 1.15 + (run ? Math.abs(Math.sin(view.time * 8)) * 0.15 : 0);
+      if (a.box) a.box.pos[0] = run ? -1.2 + ((view.time * 0.6) % 1) * 2.4 : -0.6;
+      if (a.parm) a.parm.rot[1] = run ? Math.sin(view.time * 3) * 0.6 : 0;
       const lamp = a.lamp.mesh.mat;
       if (m.broken) { const b = Math.sin(view.time * 10) > 0 ? 1 : 0.2; lamp.color = [0.8, 0.1, 0.05]; lamp.emissive = [b, 0.05, 0.02]; }
       else if (run) { lamp.color = [0.2, 0.8, 0.3]; lamp.emissive = [0.15, 0.9, 0.25]; }
+      else if (m.nopower) { const b = Math.sin(view.time * 4) > 0 ? 0.7 : 0.1; lamp.color = [0.3, 0.4, 0.9]; lamp.emissive = [0.1, 0.2, b]; }
       else { lamp.color = [0.8, 0.6, 0.1]; lamp.emissive = [0.6, 0.4, 0.05]; }
       a.smoke.visible = m.broken;
       if (m.broken) a.smoke.children.forEach((s, i) => {
-        const t = (view.time * 0.6 + i / 4) % 1;
+        s.mesh.mat.color = m.broken === 'heavy' ? [0.12, 0.12, 0.12] : [0.35, 0.35, 0.35];
+        const t = (view.time * (m.broken === 'heavy' ? 0.9 : 0.6) + i / 4) % 1;
         s.pos = [Math.sin(i * 2 + view.time) * 0.3, t * 2.2, Math.cos(i * 3) * 0.3];
         const sc = 0.6 + t * 1.4; s.scl = [sc, sc, sc];
         s.mesh.mat.opacity = 0.5 * (1 - t);
@@ -234,12 +245,14 @@ export function updateScene(S, st, view) {
     seen.add(d.id);
     let m = S.droids.get(d.id);
     if (!m) { m = droidModel(); S.root.add(m); S.droids.set(d.id, m); S.targets['droid' + d.id] = m; }
-    if (m.type !== d.type) { m.setType(d.type); m.type = d.type; }
+    if (m.type !== d.type) { m.setType(d.type); m.type = d.type; m.outfitK = undefined; }
+    const ofit = (st.wardrobe && st.wardrobe.wear[d.type]) || null;
+    if (m.outfitK !== ofit) { m.setOutfit(ofit); m.outfitK = ofit; }
     m.visible = d.st !== 'spec';
     place(m, d.x, d.z, d.rot, k);
     const v = speedOf(m, view.dt);
     walk(m, v, view.time, view.dt);
-    const busy = (d.st === 'work' && d.type === 'ouvrier' && st.machines[d.job] && st.machines[d.job].run) || d.repairing;
+    const busy = (d.st === 'work' && st.machines[d.job] && st.machines[d.job].run) || d.repairing;
     if (busy && v < 0.3) {
       m.parts.arms[0].rot[0] = -1.0 + Math.sin(view.time * 9) * 0.4;
       m.parts.arms[1].rot[0] = -1.0 - Math.sin(view.time * 9) * 0.4;
@@ -274,8 +287,9 @@ export function updateScene(S, st, view) {
   const h = st.players[view.myId].hint;
   if (h && !h.off) {
     let key = h.key;
-    if (/^(forge|circuits|assembleur|atelier|forge2|circuits2)[LR]?$/.test(key)) {
-      const pid = key.replace(/[LR]$/, '');
+    const pid0 = key.replace(/[LR]$/, '');
+    if (st.plots[pid0]) {
+      const pid = pid0;
       const node = st.plots[pid] && st.plots[pid].built ? S.machines[pid] : S.plots[pid];
       key = null;
       const c = PLAYER_COLORS[view.myId].rgb, pulse = 0.12 + 0.05 * Math.sin(view.time * 6);

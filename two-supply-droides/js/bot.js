@@ -1,7 +1,6 @@
 // Coéquipier piloté par l'ordinateur (mode solo) : il suit le joueur
 // et se place tout seul de l'autre côté dès qu'une tâche demande deux personnes.
-import { POST_R, CORE, SPEED, PLOTS } from './config.js';
-import { PLOT_BY_ID } from './world.js';
+import { POST_R, CORE, SPEED, PLOTS, WORLD } from './config.js';
 import { postL, postR } from './sim.js';
 import { obstacles, steer } from './move.js';
 
@@ -17,14 +16,17 @@ export function botInput(S, bot, dt, aIn) {
   if (me.locked) { bot.ent.x = me.x; bot.ent.z = me.z; }
   const events = [];
   let goal = null, hold = false, tapNow = false, mirror = null, why = 'suit';
+  const nearPost = (pt) => dist(A, pt) <= POST_R + 0.3;
 
   const c = S.core;
   const readyPlot = PLOTS.find((p) => {
     const st = S.plots[p.id];
-    return st.ready && !st.built && (dist(A, postL(p)) <= POST_R + 0.3 || dist(A, postR(p)) <= POST_R + 0.3);
+    return st.ready && !st.built && (nearPost(postL(p)) || nearPost(postR(p)));
   });
+  const heavy = Object.values(S.machines).find((m) => m.broken === 'heavy' && (nearPost(postL(PLOTS.find((p) => p.id === m.id))) || nearPost(postR(PLOTS.find((p) => p.id === m.id)))));
   const holdsOne = S.animals.some((a) => a.st === 'caught' && a.by === 'A');
-  const hunting = holdsOne ? null : S.animals.find((a) => ['wander', 'flee', 'corner'].includes(a.st) && dist(A, a) < 7);
+  // Il ne rabat une créature que si le joueur s'en approche vraiment (pas pendant une fouille)
+  const hunting = holdsOne || S.work.A ? null : S.animals.find((a) => ['flee', 'corner'].includes(a.st) && dist(A, a) < 5);
 
   if (!c.placed && (c.hand.A || c.hand.B)) {
     why = 'caisse';
@@ -36,21 +38,37 @@ export function botInput(S, bot, dt, aIn) {
       goal = { x: c.x + (side === 'L' ? -1 : 1) * CORE.handle, z: c.z };
       if (dist(bot.ent, goal) < 0.5) tapNow = true;
     }
+  } else if (heavy) {
+    why = 'panne';
+    const p = PLOTS.find((q) => q.id === heavy.id);
+    const aLeft = nearPost(postL(p));
+    goal = aLeft ? postR(p) : postL(p);
+    if (dist(bot.ent, goal) < 0.5) hold = true;
   } else if (readyPlot) {
     why = 'montage';
     const st = S.plots[readyPlot.id];
-    const aLeft = dist(A, postL(readyPlot)) <= POST_R + 0.3;
+    const aLeft = nearPost(postL(readyPlot));
     goal = aLeft ? postR(readyPlot) : postL(readyPlot);
-    const there = dist(bot.ent, goal) < 0.5;
-    if (there) {
+    if (dist(bot.ent, goal) < 0.5) {
       if (aLeft) { if (st.holder === 'A') { bot.tap -= dt; if (bot.tap <= 0) { tapNow = true; bot.tap = 0.32; } } }
       else hold = true;
     }
   } else if (hunting) {
     why = 'créature';
     const a = hunting;
-    const dx = a.x - A.x, dz = a.z - A.z, l = Math.hypot(dx, dz) || 1;
-    goal = { x: a.x + (dx / l) * 2.6, z: a.z + (dz / l) * 2.6 };
+    // Direction de fuite : à l'opposé du joueur (ou cap de la créature si le joueur est collé dessus)
+    let dx = a.x - A.x, dz = a.z - A.z, l = Math.hypot(dx, dz);
+    if (l < 1) { dx = Math.sin(a.rot); dz = Math.cos(a.rot); l = 1; }
+    const ux = dx / l, uz = dz / l;
+    const lim = WORLD.half - 1.5;
+    const clampG = (x, z) => ({ x: Math.max(-lim, Math.min(lim, x)), z: Math.max(-lim, Math.min(lim, z)) });
+    goal = clampG(a.x + ux * 2.4, a.z + uz * 2.4);
+    // Encore derrière la créature : il la contourne par le côté au lieu de la pousser
+    const bx = bot.ent.x - a.x, bz = bot.ent.z - a.z;
+    if (bx * ux + bz * uz < 0.3 * Math.hypot(bx, bz)) {
+      const px = -uz, pz = ux, sgn = px * bx + pz * bz >= 0 ? 1 : -1;
+      goal = clampG(a.x + px * sgn * 2.4 + ux * 0.9, a.z + pz * sgn * 2.4 + uz * 0.9);
+    }
   } else {
     const back = 2.2, side = 1.3;
     goal = { x: A.x - Math.sin(A.rot) * back + Math.cos(A.rot) * side, z: A.z - Math.cos(A.rot) * back - Math.sin(A.rot) * side };
@@ -66,16 +84,14 @@ export function botInput(S, bot, dt, aIn) {
     // Coincé ou trop loin : il « rejoint » directement (comme un coéquipier de jeu vidéo).
     bot.stuck = far > 1 && far > (bot.lastFar ?? 1e9) - 0.02 ? (bot.stuck || 0) + dt : 0;
     bot.lastFar = far;
-    if (far > 22 || bot.stuck > 1.5) {
-      bot.ent.x = goal.x; bot.ent.z = goal.z; bot.stuck = 0; bot.lastFar = 0;
-    }
-    const speed = far > 6 ? SPEED * 1.15 : SPEED;
+    if (far > 22 || bot.stuck > 1.5) { bot.ent.x = goal.x; bot.ent.z = goal.z; bot.stuck = 0; bot.lastFar = 0; }
+    const speed = why === 'créature' ? SPEED * 1.25 : far > 6 ? SPEED * 1.15 : SPEED;
     steer(bot.ent, goal.x, goal.z, speed, dt, obstacles(S), 0.4);
     const vx = bot.ent.x - x0, vz = bot.ent.z - z0, v = Math.hypot(vx, vz);
     if (v > 1e-4) { mx = vx / v; mz = vz / v; bot.ent.rot = Math.atan2(mx, mz); }
   }
 
-  // Appuis : maintien (tenir) ou petits coups (visser, saisir, lâcher)
+  // Appuis : maintien (tenir, couper, réparer) ou petits coups (visser, saisir, lâcher)
   if (bot.pressed) { events.push('up'); bot.pressed = false; bot.held = false; }
   if (hold && !bot.held) { events.push('down'); bot.held = true; }
   else if (!hold && bot.held && !bot.pressed) { events.push('up'); bot.held = false; }
@@ -86,6 +102,5 @@ export function botInput(S, bot, dt, aIn) {
 }
 
 export function botLabel(bot) {
-  return { caisse: 'porte la caisse', montage: 'monte avec toi', créature: 'prend la créature à revers', suit: 'te suit' }[bot.why] || '';
+  return { caisse: 'porte la caisse', montage: 'monte avec toi', panne: 'répare la panne avec toi', créature: 'prend la créature à revers', suit: 'te suit' }[bot.why] || '';
 }
-

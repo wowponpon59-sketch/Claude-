@@ -3,7 +3,7 @@
 // puis échangent directement entre eux (idéal sur le même Wi-Fi).
 // En test (?net=fake) : un faux PeerJS qui passe par BroadcastChannel entre onglets.
 
-const PREFIX = 'twosupply-v02-';
+const PREFIX = 'twosupply-v03-';
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 export function makeCode() {

@@ -1,12 +1,12 @@
 // Modèles 3D procéduraux : terrain vague, débris, ruines, machines, humains, droïdes, créatures.
 import { Node, mesh, meshes, mat, bake, box, cylinder, sphere, torus, plane, ring, lump, terrain, P } from './gl.js';
-import { WORLD, SLAB, NODE_TYPES, MACHINES, ENTREPOT, CORE, DROIDS, PLAYER_COLORS } from './config.js';
+import { WORLD, SLAB, NODE_TYPES, MACHINES, ENTREPOT, CORE, DROIDS, PLAYER_COLORS, ITEMS } from './config.js';
 import { height, noise, rng, NODES, PROPS, RUINS, POND } from './world.js';
 
 export const C = {
   dirt: [0.56, 0.48, 0.39], grass: [0.50, 0.49, 0.31], wet: [0.37, 0.31, 0.26], sand: [0.70, 0.64, 0.54], rustdirt: [0.55, 0.42, 0.33],
   concrete: [0.44, 0.43, 0.41], steel: [0.58, 0.60, 0.63], dark: [0.20, 0.21, 0.23], rustMetal: [0.46, 0.43, 0.40],
-  clay: [0.66, 0.38, 0.25], lime: [0.88, 0.85, 0.78], glass: [0.62, 0.86, 0.88], water: [0.10, 0.20, 0.22],
+  clay: [0.58, 0.24, 0.15], lime: [0.88, 0.85, 0.78], glass: [0.62, 0.86, 0.88], water: [0.10, 0.20, 0.22],
   wood: [0.40, 0.32, 0.25], rubber: [0.11, 0.11, 0.12], yellow: [0.90, 0.68, 0.14], copper: [0.76, 0.47, 0.27],
   skin: [0.88, 0.70, 0.56], white: [0.92, 0.92, 0.90], canvas: [0.45, 0.36, 0.26], green: [0.24, 0.55, 0.32],
 };
@@ -137,7 +137,7 @@ export function buildDecor() {
 // ---------- débris à fouiller ----------
 export function nodeModel(n) {
   const r = rng(n.id * 31 + 7);
-  const parts = { rust: [], glass: [], clay: [], rock: [], rubber: [], paint: [], water: [] };
+  const parts = { rust: [], glass: [], clay: [], rock: [], rubber: [], paint: [], water: [], wood: [], sand: [], coal: [], plastic: [] };
   switch (n.type) {
     case 'epave': {
       const paint = [[0.30, 0.38, 0.55], [0.55, 0.25, 0.18], [0.35, 0.45, 0.32], [0.6, 0.58, 0.5]][Math.floor(r() * 4)];
@@ -149,8 +149,9 @@ export function nodeModel(n) {
       break;
     }
     case 'ferraille':
-      for (let k = 0; k < 9; k++) parts.rust.push({ g: B(0.3 + r() * 1.1, 0.06 + r() * 0.12, 0.2 + r() * 0.6), p: [(r() - 0.5) * 1.1, 0.05 + k * 0.09, (r() - 0.5) * 1.1], r: [(r() - 0.5) * 0.7, r() * 3, (r() - 0.5) * 0.7], c: vary(C.rustMetal, r) });
-      parts.paint.push({ g: CY(0.28, 0.28, 0.85, 12, -0.42), p: [0.5, 0.3, -0.3], r: [0, 0.4, Math.PI / 2], c: [0.5, 0.2, 0.15] });
+      for (let k = 0; k < 10; k++) (k % 3 ? parts.paint : parts.rust).push({ g: B(0.3 + r() * 1.1, 0.06 + r() * 0.12, 0.2 + r() * 0.6), p: [(r() - 0.5) * 1.1, 0.05 + k * 0.09, (r() - 0.5) * 1.1], r: [(r() - 0.5) * 0.7, r() * 3, (r() - 0.5) * 0.7], c: vary([0.56, 0.62, 0.70], r, 0.15) });
+      parts.paint.push({ g: B(0.12, 0.12, 1.6), p: [0.2, 0.55, 0.1], r: [0.3, 0.7, 0.2], c: [0.5, 0.55, 0.6] });
+      parts.paint.push({ g: CY(0.06, 0.06, 1.3, 8, -0.65), p: [-0.4, 0.45, 0.3], r: [0, 1.2, Math.PI / 2 - 0.3], c: [0.6, 0.64, 0.7] });
       break;
     case 'vitres':
       for (let k = 0; k < 3; k++) {
@@ -163,7 +164,8 @@ export function nodeModel(n) {
     case 'argile':
       parts.clay.push({ g: lump(1.25, n.id + 3, 0.3, 14, 9, 0.45), p: [0, 0, 0], c: C.clay });
       for (let k = 0; k < 3; k++) parts.clay.push({ g: lump(0.45, n.id + 11 + k, 0.35, 10, 7, 0.6), p: [(r() - 0.5) * 2.4, 0, (r() - 0.5) * 2.4], c: vary(C.clay, r) });
-      parts.water.push({ g: ring(0, 0.8, 20), p: [1.0, 0.04, 0.9], c: [0.5, 0.35, 0.28] });
+      parts.water.push({ g: ring(0, 0.8, 20), p: [1.0, 0.04, 0.9], c: [0.45, 0.22, 0.14] });
+      parts.wood.push({ g: B(0.08, 0.9, 0.2), p: [-0.6, 0.6, 0.7], r: [0.5, 0.4, 0.2], c: [0.42, 0.33, 0.24] });
       break;
     case 'calcaire':
       for (let k = 0; k < 5; k++) {
@@ -177,6 +179,54 @@ export function nodeModel(n) {
       for (const x of [-0.6, 0.6]) parts.rust.push({ g: B(0.12, 0.5, 1.1), p: [x, 0, 0], r: [0, n.rot, 0], c: C.rustMetal });
       parts.water.push({ g: ring(0, 1.3, 24), p: [0.6, 0.04, 0.7], c: [1, 1, 1] });
       break;
+    case 'cables': {
+      parts.rust.push({ g: B(0.35, 0.35, 3.2), p: [0, 0.18, 0], r: [0, 0.3, 0.05], c: C.rustMetal });
+      parts.rust.push({ g: B(0.2, 1.6, 0.2), p: [0.3, 0, -1.3], r: [0.6, 0.3, 0.2], c: C.rustMetal });
+      for (const [x, z, s2] of [[-0.8, 0.6, 1], [0.7, 0.9, 0.8]]) {
+        parts.wood.push({ g: CY(0.55 * s2, 0.55 * s2, 0.12, 16, -0.3 * s2), p: [x, 0.55 * s2, z], r: [Math.PI / 2, 0.4, 0], c: [0.45, 0.34, 0.24] });
+        parts.wood.push({ g: CY(0.55 * s2, 0.55 * s2, 0.12, 16, 0.18 * s2), p: [x, 0.55 * s2, z], r: [Math.PI / 2, 0.4, 0], c: [0.45, 0.34, 0.24] });
+        parts.paint.push({ g: CY(0.4 * s2, 0.4 * s2, 0.5 * s2, 16, -0.25 * s2), p: [x, 0.55 * s2, z], r: [Math.PI / 2, 0.4, 0], c: [0.85, 0.48, 0.18] });
+      }
+      for (let k = 0; k < 3; k++) parts.paint.push({ g: TO(0.35 + k * 0.08, 0.025), p: [-0.2 + k * 0.3, 0.03, -0.6], c: [0.88, 0.5, 0.2] });
+      break;
+    }
+    case 'pneus':
+      for (let k = 0; k < 7; k++) {
+        const stack = k < 4;
+        parts.rubber.push({ g: TO(0.38, 0.15), p: stack ? [-0.3 + (r() - 0.5) * 0.08, 0.15 + k * 0.28, -0.2] : [0.4 + (r() - 0.5) * 0.6, 0.3, 0.4 + (k - 5) * 0.5], r: stack ? [(r() - 0.5) * 0.15, 0, (r() - 0.5) * 0.15] : [Math.PI / 2 - 0.3, r() * 3, 0], c: C.rubber });
+      }
+      break;
+    case 'dune':
+      parts.sand.push({ g: lump(1.5, n.id + 7, 0.2, 14, 9, 0.38), p: [0, -0.05, 0], c: [0.86, 0.76, 0.5] });
+      parts.sand.push({ g: lump(0.7, n.id + 2, 0.25, 10, 7, 0.4), p: [1.2, -0.05, 0.6], c: [0.9, 0.8, 0.55] });
+      parts.wood.push({ g: B(0.06, 0.06, 1.1), p: [0.3, 0.55, -0.2], r: [0.4, 0.8, 0.5], c: [0.55, 0.45, 0.35] });
+      break;
+    case 'charbon': {
+      parts.rust.push({ g: B(1.5, 0.8, 1.0, 0.25), p: [0, 0, 0], c: [0.4, 0.36, 0.33] });
+      for (const [x, z] of [[-0.55, 0.52], [0.55, 0.52], [-0.55, -0.52], [0.55, -0.52]]) parts.rubber.push({ g: CY(0.2, 0.2, 0.08, 12, -0.04), p: [x, 0.2, z], r: [Math.PI / 2, 0, 0], c: [0.2, 0.2, 0.2] });
+      parts.coal.push({ g: lump(0.62, n.id + 5, 0.4, 12, 8, 0.6), p: [0, 1.0, 0], c: [0.12, 0.12, 0.13] });
+      parts.coal.push({ g: lump(0.55, n.id + 9, 0.45, 12, 8, 0.5), p: [1.1, 0, 0.7], c: [0.11, 0.11, 0.12] });
+      parts.rust.push({ g: B(0.08, 0.08, 2.6), p: [-0.5, 0.02, 0], r: [0, 1.4, 0], c: C.rustMetal });
+      break;
+    }
+    case 'bidons': {
+      const cols = [[0.88, 0.3, 0.58], [0.2, 0.55, 0.85], [0.92, 0.92, 0.9], [0.95, 0.75, 0.2]];
+      for (let k = 0; k < 6; k++) {
+        const c = cols[k % 4], lying = k > 3;
+        parts.plastic.push({ g: B(0.42, 0.55, 0.26), p: [(r() - 0.5) * 1.3, lying ? 0.13 : 0, (r() - 0.5) * 1.3], r: lying ? [Math.PI / 2, r() * 3, 0] : [0, r() * 3, 0], c });
+        if (!lying) parts.plastic.push({ g: B(0.14, 0.12, 0.08), p: [0, 0.58, 0], c });
+      }
+      parts.plastic.push({ g: CY(0.3, 0.3, 0.85, 14), p: [0.6, 0, -0.5], c: [0.2, 0.55, 0.85] });
+      break;
+    }
+    case 'palettes':
+      for (let k = 0; k < 5; k++) {
+        const y = k * 0.16, a = (r() - 0.5) * 0.2, x0 = (r() - 0.5) * 0.15;
+        for (let j = 0; j < 5; j++) parts.wood.push({ g: B(0.18, 0.03, 1.2), p: [x0 - 0.5 + j * 0.25, y + 0.12, 0], r: [0, a, 0], c: vary([0.66, 0.52, 0.34], r, 0.12) });
+        for (const z of [-0.5, 0, 0.5]) parts.wood.push({ g: B(1.2, 0.1, 0.12), p: [x0, y, z], r: [0, a, 0], c: vary([0.58, 0.45, 0.3], r, 0.1) });
+      }
+      parts.wood.push({ g: B(1.2, 0.03, 0.18), p: [0.9, 0.3, 0.7], r: [0.8, 0.5, 0.3], c: [0.64, 0.5, 0.33] });
+      break;
   }
   const root = new Node();
   const body = new Node();
@@ -184,6 +234,8 @@ export function nodeModel(n) {
     rust: mat([1, 1, 1], { pattern: P.rust }), glass: mat([1, 1, 1], { pattern: P.glass, opacity: 0.4, cast: false }),
     clay: mat([1, 1, 1], { pattern: P.clay }), rock: mat([1, 1, 1], { pattern: P.rock }), rubber: mat([1, 1, 1], { pattern: P.rubber }),
     paint: mat([1, 1, 1], { pattern: P.paint }), water: mat(C.water, { pattern: P.water, cast: false }),
+    wood: mat([1, 1, 1], { pattern: P.wood }), sand: mat([1, 1, 1], { pattern: P.ground }),
+    coal: mat([1, 1, 1], { pattern: P.rock, rough: 0.3 }), plastic: mat([1, 1, 1], { pattern: P.plain, rough: 0.35 }),
   };
   for (const k of Object.keys(parts)) if (parts[k].length) (k === 'water' ? root : body).add(meshes(bake(parts[k]), M[k]));
   root.add(body);
@@ -262,9 +314,119 @@ export function machineModel(type) {
     ringA.pos = [0, 1.2, 0];
     root.add(ringA);
     anim.ring = ringA;
+  } else if (type === 'trefileuse') {
+    root.add(mesh(B(2.5, 0.7, 1.6, 0.1), mat([0.32, 0.42, 0.5], { pattern: P.paint })));
+    const spool = new Node().at(-0.5, 1.35, 0);
+    spool.add(mesh(CY(0.55, 0.55, 0.08, 18, -0.42), mat(C.dark, { pattern: P.paint })));
+    spool.add(mesh(CY(0.55, 0.55, 0.08, 18, 0.34), mat(C.dark, { pattern: P.paint })));
+    spool.add(mesh(CY(0.42, 0.42, 0.7, 18, -0.35), mat([0.88, 0.5, 0.2], { rough: 0.25 })));
+    spool.rot = [Math.PI / 2, 0, 0];
+    root.add(spool);
+    root.add(mesh(B(0.5, 0.5, 0.5), mat(C.steel, { pattern: P.paint })).at(0.7, 0.8, 0));
+    root.add(mesh(CY(0.03, 0.03, 1.0, 6, -0.5), mat([0.9, 0.55, 0.25], { rough: 0.2 })).at(0.15, 1.15, 0).rotY(0));
+    root.add(mesh(B(0.35, 0.3, 0.6), mat([0.25, 0.25, 0.28], { pattern: P.paint })).at(1.0, 0.8, 0.5));
+    anim.spool = spool;
+  } else if (type === 'generateur') {
+    root.add(mesh(B(2.3, 1.0, 1.5, 0.1), mat([0.22, 0.38, 0.28], { pattern: P.paint })));
+    root.add(mesh(B(1.2, 0.5, 1.2), mat([0.18, 0.3, 0.22], { pattern: P.paint })).at(-0.3, 1.1, 0));
+    const fly = new Node().at(1.3, 0.8, 0);
+    fly.add(mesh(CY(0.6, 0.6, 0.12, 20, -0.06), mat(C.dark, { pattern: P.paint })));
+    fly.add(mesh(B(1.1, 0.08, 0.13), mat(C.yellow, { pattern: P.paint })).at(0, 0, 0));
+    fly.rot = [0, 0, Math.PI / 2];
+    root.add(fly);
+    const pipe = mesh(CY(0.13, 0.15, 1.6, 10), mat(C.rustMetal, { pattern: P.rust }));
+    pipe.pos = [-0.8, 1.1, -0.45];
+    root.add(pipe);
+    const tip = mesh(CY(0.14, 0.14, 0.08, 10), mat([0.2, 0.1, 0.05], { emissive: [0, 0, 0] }));
+    tip.pos = [-0.8, 2.7, -0.45];
+    root.add(tip);
+    root.add(mesh(B(0.8, 0.45, 0.6), mat(C.rustMetal, { pattern: P.rust })).at(-0.55, 0.1, 0.85));
+    root.add(mesh(lump(0.3, 3, 0.4, 8, 6, 0.6), mat([0.12, 0.12, 0.13], { pattern: P.rock })).at(-0.55, 0.55, 0.85));
+    anim.fly = fly; anim.tip = tip;
+  } else if (type === 'fonderie') {
+    root.add(mesh(B(2.4, 1.2, 1.9, 0.1), mat([0.5, 0.3, 0.24], { pattern: P.clay })));
+    root.add(mesh(CY(0.3, 0.38, 2.6, 12), mat([0.45, 0.28, 0.22], { pattern: P.clay })).at(-0.8, 1.3, -0.5));
+    const cru = mesh(CY(0.5, 0.42, 0.55, 16), mat([0.25, 0.22, 0.2], { pattern: P.rust }));
+    cru.pos = [0.35, 1.3, 0.1];
+    root.add(cru);
+    const melt = mesh(CY(0.44, 0.44, 0.04, 16), mat([0.4, 0.15, 0.05], { emissive: [0.2, 0.05, 0] }));
+    melt.pos = [0.35, 1.8, 0.1];
+    root.add(melt);
+    root.add(mesh(B(0.9, 0.12, 0.4), mat(C.steel, { pattern: P.paint })).at(0.4, 0.5, 1.05));
+    for (let k = 0; k < 3; k++) root.add(mesh(B(0.32, 0.12, 0.16), mat([0.6, 0.64, 0.7], { rough: 0.3 })).at(0.15 + k * 0.25, 0.62, 1.05));
+    anim.melt = melt;
+  } else if (type === 'laminoir') {
+    root.add(mesh(B(3.0, 0.5, 1.6, 0.1), mat([0.3, 0.33, 0.38], { pattern: P.paint })));
+    for (const x of [-0.6, 0.6]) {
+      root.add(mesh(B(0.2, 1.6, 1.5, 0.1), mat(C.yellow, { pattern: P.paint })).at(x, 0, 0));
+    }
+    const rollers = [];
+    for (const y of [0.95, 1.4]) {
+      const rl = mesh(CY(0.22, 0.22, 1.1, 16, -0.55), mat([0.62, 0.65, 0.7], { rough: 0.2 }));
+      rl.pos = [0, y, 0]; rl.rot = [0, 0, Math.PI / 2];
+      root.add(rl); rollers.push(rl);
+    }
+    root.add(mesh(B(1.0, 0.03, 0.9), mat([0.7, 0.72, 0.76], { rough: 0.2 })).at(-1.0, 0.62, 0));
+    root.add(mesh(B(1.0, 0.03, 0.9), mat([0.7, 0.72, 0.76], { rough: 0.2 })).at(1.0, 0.62, 0));
+    anim.rollers = rollers;
+  } else if (type === 'qualite') {
+    root.add(mesh(B(2.8, 0.15, 0.8), mat(C.rubber, { pattern: P.rubber })).at(0, 0.7, 0.3));
+    root.add(mesh(B(2.8, 0.6, 0.8, 0.1), mat([0.85, 0.86, 0.88], { pattern: P.paint })).at(0, 0, 0.3));
+    for (const x of [-0.5, 0.5]) root.add(mesh(B(0.12, 1.5, 0.12, 0.7), mat([0.85, 0.86, 0.88], { pattern: P.paint })).at(x, 0, 0.3));
+    root.add(mesh(B(1.12, 0.15, 0.3), mat([0.85, 0.86, 0.88], { pattern: P.paint })).at(0, 2.2, 0.3));
+    const beam = mesh(B(0.9, 0.04, 0.04), mat([0.2, 0.9, 0.4], { emissive: [0.1, 0.8, 0.3] }));
+    beam.pos = [0, 1.4, 0.3];
+    root.add(beam);
+    root.add(mesh(B(0.8, 1.1, 0.5, 0.1), mat([0.25, 0.28, 0.32], { pattern: P.paint })).at(0.9, 0, -0.7));
+    root.add(mesh(B(0.6, 0.4, 0.03), mat([0.1, 0.2, 0.15], { emissive: [0.1, 0.4, 0.2] })).at(0.9, 1.0, -0.44));
+    root.add(mesh(B(0.6, 0.4, 0.6), mat([0.7, 0.2, 0.15], { pattern: P.paint })).at(-1.1, 0.1, -0.7));
+    anim.beam = beam;
+  } else if (type === 'recycleur') {
+    root.add(mesh(B(2.0, 1.0, 1.6, 0.1), mat([0.3, 0.45, 0.3], { pattern: P.paint })));
+    root.add(mesh(CY(0.95, 0.5, 0.8, 4), mat([0.35, 0.5, 0.35], { pattern: P.paint })).at(0, 1.1, 0).rotY(Math.PI / 4));
+    const jaw = new Node().at(0, 1.15, 0);
+    for (let k = 0; k < 4; k++) jaw.add(mesh(B(0.08, 0.25, 0.7), mat(C.steel, { rough: 0.3 })).at(-0.3 + k * 0.2, 0, 0));
+    root.add(jaw);
+    root.add(mesh(B(0.8, 0.5, 0.7), mat([0.25, 0.3, 0.35], { pattern: P.paint })).at(1.2, 0.1, 0.5));
+    anim.jaw = jaw;
+  } else if (type === 'four') {
+    root.add(mesh(B(2.6, 0.5, 2.0, 0.1), mat([0.4, 0.38, 0.36], { pattern: P.concrete })));
+    const dome = mesh(SP(1.1, 16, 10), mat([0.7, 0.62, 0.5], { pattern: P.clay }));
+    dome.pos = [0, 0.6, 0]; dome.scl = [1.1, 0.95, 0.95];
+    root.add(dome);
+    root.add(mesh(CY(0.2, 0.24, 1.4, 12), mat(C.rustMetal, { pattern: P.rust })).at(0.5, 1.4, -0.5));
+    const mouth = mesh(B(0.7, 0.45, 0.05), mat([0.06, 0.04, 0.03]));
+    mouth.pos = [0, 0.75, 1.02];
+    root.add(mouth);
+    root.add(mesh(CY(0.45, 0.15, 0.6, 12), mat(C.steel, { pattern: P.paint })).at(-1.0, 1.0, 0.6));
+    root.add(mesh(lump(0.3, 2, 0.2, 8, 6, 0.6), mat([0.86, 0.76, 0.5], { pattern: P.ground })).at(-1.0, 1.55, 0.6));
+    anim.mouth = mouth;
+  } else if (type === 'emballeuse') {
+    root.add(mesh(B(3.0, 0.15, 0.9), mat(C.rubber, { pattern: P.rubber })).at(0, 0.8, 0.3));
+    root.add(mesh(B(3.0, 0.7, 0.9, 0.1), mat([0.4, 0.42, 0.48], { pattern: P.paint })).at(0, 0, 0.3));
+    const box1 = mesh(B(0.6, 0.45, 0.5), mat(C.wood, { pattern: P.wood }));
+    box1.pos = [-0.6, 0.95, 0.3];
+    root.add(box1);
+    const arm = new Node().at(0.4, 2.0, -0.4);
+    arm.add(mesh(B(0.12, 0.12, 0.8, 0), mat(C.yellow, { pattern: P.paint })).at(0, 0, 0));
+    arm.add(mesh(B(0.5, 0.06, 0.2), mat(C.steel)).at(0, -0.1, 0.8));
+    root.add(arm);
+    root.add(mesh(B(0.12, 2.0, 0.12, 0.1), mat(C.yellow, { pattern: P.paint })).at(0.4, 0, -0.45));
+    const stack = [];
+    for (let k = 0; k < 4; k++) stack.push({ g: B(0.7, 0.05, 0.5), p: [1.2, 0.1 + k * 0.06, -0.6], c: [0.72, 0.56, 0.36] });
+    root.add(meshes(bake(stack), mat([1, 1, 1], { pattern: P.wood })));
+    anim.box = box1; anim.parm = arm;
+  } else if (type === 'quai') {
+    root.add(mesh(B(3.8, 0.6, 2.0, 0.1), mat([0.48, 0.4, 0.3], { pattern: P.wood })));
+    root.add(mesh(B(1.8, 2.0, 1.8, 0.7), mat([0.25, 0.4, 0.6], { pattern: P.paint })).at(0.8, 0, -0.05));
+    root.add(mesh(B(1.6, 0.04, 1.8), mat([0.12, 0.12, 0.13])).at(-0.1, 1.5, -0.05).rotY(0));
+    const r2 = rng(11);
+    const cr = [];
+    for (let k = 0; k < 4; k++) cr.push({ g: B(0.5, 0.45, 0.5), p: [-1.4 + (k % 2) * 0.55, 0.7 + Math.floor(k / 2) * 0.46, -0.3 + (r2() - 0.5) * 0.2], c: vary([0.78, 0.62, 0.4], r2, 0.1) });
+    root.add(meshes(bake(cr), mat([1, 1, 1], { pattern: P.wood })));
   }
   const lamp = light();
-  lamp.pos = [m.w / 2 - 0.2, type === 'assembleur' ? 3.05 : 1.95, -m.d / 2 + 0.3];
+  lamp.pos = [m.w / 2 - 0.2, type === 'assembleur' ? 3.05 : type === 'quai' ? 2.8 : 2.0, -m.d / 2 + 0.3];
   root.add(lamp);
   anim.lamp = lamp;
   const smoke = new Node();
@@ -304,9 +466,11 @@ export function plotModel(type) {
   return root;
 }
 
+const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 export function itemPile(item, n) {
-  const col = { fer: [0.48, 0.36, 0.3], verre: C.glass, argile: C.clay, calcaire: C.lime, eau: [0.3, 0.5, 0.7], carcasse: C.steel, circuit: C.green }[item];
-  const pat = { fer: P.rust, verre: P.glass, argile: P.clay, calcaire: P.rock, eau: P.paint, carcasse: P.paint, circuit: P.plain }[item];
+  const def = ITEMS[item];
+  const col = hexRgb(def.css);
+  const pat = { fer: P.paint, verre: P.glass, argile: P.clay, calcaire: P.rock, sable: P.ground, charbon: P.rock, bois: P.wood, caoutchouc: P.rubber }[item] ?? (def.kind === 'kit' ? P.paint : P.plain);
   const parts = [];
   for (let k = 0; k < Math.min(n, 6); k++) parts.push({ g: B(0.28, 0.2, 0.28), p: [(k % 3) * 0.32 - 0.32, Math.floor(k / 3) * 0.21, 0], r: [0, k * 0.3, 0], c: col });
   if (!parts.length) return new Node();
@@ -429,17 +593,42 @@ export function droidModel() {
     logistique: new Node().add(mesh(B(0.42, 0.36, 0.3), mat(C.wood, { pattern: P.wood })).at(0, 0.18, -0.38), mesh(B(0.12, 0.08, 0.16), mat([0.2, 0.4, 0.9], { emissive: [0.1, 0.25, 0.6] })).at(0.34, -0.1, 0.2)),
     maintenance: new Node().add(mesh(B(0.32, 0.18, 0.14), mat([0.75, 0.15, 0.12], { pattern: P.paint })).at(0.36, -0.45, 0.05), mesh(B(0.04, 0.32, 0.06), mat(C.steel)).at(-0.36, -0.3, 0.12)),
     ingenieur: new Node().add(mesh(B(0.26, 0.18, 0.02), mat([0.15, 0.1, 0.25], { emissive: [0.3, 0.15, 0.55] })).at(-0.3, -0.2, 0.25), mesh(TO(0.2, 0.03), mat([0.95, 0.95, 0.95], { pattern: P.paint })).at(0, 0.88, 0)),
+    recherche: new Node().add(mesh(B(0.34, 0.4, 0.2), mat([0.2, 0.45, 0.42], { pattern: P.paint })).at(0, 0.15, -0.3), mesh(CY(0.0, 0.16, 0.08, 12), mat(C.steel, { rough: 0.2 })).at(0.12, 0.62, -0.32), mesh(SP(0.05, 6, 4), mat([0.2, 0.9, 0.8], { emissive: [0.2, 0.9, 0.8] })).at(0.12, 0.72, -0.32)),
+    chefmaint: new Node().add(mesh(B(0.4, 0.22, 0.18), mat([0.8, 0.12, 0.1], { pattern: P.paint })).at(0.38, -0.42, 0.05), mesh(SP(0.2, 12, 6), mat([0.12, 0.45, 0.25], { pattern: P.paint })).at(0, 0.88, 0), mesh(B(0.04, 0.36, 0.06), mat(C.steel)).at(-0.36, -0.3, 0.12)),
+    expert: new Node().add(mesh(B(0.5, 0.44, 0.34), mat([0.25, 0.35, 0.7], { pattern: P.paint })).at(0, 0.2, -0.4), mesh(B(0.16, 0.1, 0.2), mat([0.2, 0.4, 0.9], { emissive: [0.15, 0.3, 0.8] })).at(0.34, -0.1, 0.2)),
+    qualite: new Node().add(mesh(TO(0.1, 0.02), mat(C.steel, { rough: 0.2 })).at(0.34, -0.4, 0.22), mesh(B(0.03, 0.18, 0.03), mat(C.dark)).at(0.34, -0.55, 0.22), mesh(B(0.3, 0.06, 0.05), mat([0.85, 0.2, 0.15], { emissive: [0.3, 0.05, 0.03] })).at(0, 0.5, 0.24)),
+    production: new Node().add(mesh(CY(0.04, 0.045, 0.45, 8, -0.47), mat([0.95, 0.5, 0.15], { pattern: P.paint })).at(-0.26, 0.28, -0.12), mesh(CY(0.04, 0.045, 0.45, 8, -0.47), mat([0.95, 0.5, 0.15], { pattern: P.paint })).at(0.26, 0.28, -0.12), mesh(B(0.2, 0.2, 0.2), mat(C.dark, { pattern: P.paint })).at(0, 0.3, -0.3)),
+    process: new Node().add(mesh(B(0.34, 0.08, 0.06), mat([0.3, 0.2, 0.7], { emissive: [0.35, 0.25, 0.9] })).at(0, 0.8, 0.2), mesh(B(0.24, 0.16, 0.02), mat([0.2, 0.15, 0.4], { emissive: [0.2, 0.15, 0.5] })).at(-0.3, -0.2, 0.25)),
+    achat: new Node().add(mesh(B(0.32, 0.26, 0.26), mat([0.78, 0.6, 0.38], { pattern: P.wood })).at(0.34, -0.15, 0.12), mesh(B(0.2, 0.12, 0.02), mat([0.9, 0.4, 0.6], { emissive: [0.4, 0.1, 0.25] })).at(-0.3, -0.2, 0.25)),
+    adjoint: new Node().add(mesh(B(0.24, 0.32, 0.02), mat([0.5, 0.38, 0.25], { pattern: P.wood })).at(-0.3, -0.15, 0.25), mesh(B(0.2, 0.24, 0.01), mat([0.95, 0.95, 0.92])).at(-0.3, -0.15, 0.265)),
+    chef: new Node().add(mesh(CY(0.17, 0.2, 0.16, 14), mat([0.12, 0.12, 0.15], { pattern: P.paint })).at(0, 0.9, 0), mesh(CY(0.205, 0.205, 0.04, 14), mat([0.95, 0.75, 0.25], { rough: 0.2 })).at(0, 0.92, 0), mesh(SP(0.05, 8, 6), mat([0.95, 0.75, 0.25], { emissive: [0.4, 0.3, 0.05] })).at(0.12, 0.45, 0.25)),
   };
   acc.ouvrier.pos = [0, 0.9, 0];
   for (const k of Object.keys(acc)) { acc[k].visible = false; body.add(acc[k]); }
+  // Tenues achetées avec les crédits
+  const outfit = {
+    casquette: new Node().add(mesh(SP(0.2, 12, 6), mat([0.85, 0.2, 0.2], { pattern: P.paint })).at(0, 0.86, 0), mesh(B(0.26, 0.03, 0.18), mat([0.85, 0.2, 0.2], { pattern: P.paint })).at(0, 0.86, 0.2)),
+    casque: new Node().add(mesh(SP(0.23, 12, 6), mat([0.98, 0.8, 0.1], { pattern: P.paint, rough: 0.3 })).at(0, 0.86, 0), mesh(CY(0.3, 0.3, 0.03, 16), mat([0.98, 0.8, 0.1], { pattern: P.paint })).at(0, 0.86, 0)),
+    tablier: new Node().add(mesh(B(0.44, 0.52, 0.03), mat([0.45, 0.28, 0.16], { pattern: P.wood, rough: 0.7 })).at(0, 0.05, 0.27)),
+    gilet: new Node().add(mesh(B(0.64, 0.42, 0.52), mat([1.0, 0.45, 0.05], { pattern: P.paint })).at(0, 0.12, 0), mesh(B(0.65, 0.05, 0.53), mat([0.9, 0.9, 0.85], { emissive: [0.5, 0.5, 0.45] })).at(0, 0.32, 0), mesh(B(0.65, 0.05, 0.53), mat([0.9, 0.9, 0.85], { emissive: [0.5, 0.5, 0.45] })).at(0, 0.2, 0)),
+    noeud: new Node().add(mesh(B(0.1, 0.08, 0.04), mat([0.75, 0.05, 0.1], { pattern: P.paint })).at(-0.06, 0.6, 0.22), mesh(B(0.1, 0.08, 0.04), mat([0.75, 0.05, 0.1], { pattern: P.paint })).at(0.06, 0.6, 0.22), mesh(SP(0.03, 6, 4), mat([0.6, 0.05, 0.08])).at(0, 0.6, 0.25)),
+  };
+  for (const k of Object.keys(outfit)) { outfit[k].visible = false; body.add(outfit[k]); }
   hips.add(body);
   root.add(hips);
-  root.parts = { legs, arms, body, head, acc, paint, glow, hips };
+  root.parts = { legs, arms, body, head, acc, paint, glow, hips, outfit };
   root.setType = (type) => {
     const d = DROIDS[type];
     paint.color = d.color;
     glow.emissive = d.color.map((v) => v * 0.9);
     for (const k of Object.keys(acc)) acc[k].visible = k === type;
+    root.baseColor = d.color;
+  };
+  root.setOutfit = (o) => {
+    for (const k of Object.keys(outfit)) outfit[k].visible = k === o;
+    if (o === 'chrome') { paint.color = [0.86, 0.88, 0.92]; paint.rough = 0.12; }
+    else if (o === 'or') { paint.color = [0.98, 0.76, 0.26]; paint.rough = 0.15; }
+    else { paint.color = root.baseColor || paint.color; paint.rough = 0.4; }
   };
   return root;
 }

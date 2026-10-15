@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Two Supply">
 <meta name="theme-color" content="#0e1115">
-<meta name="description" content="Two Supply — Droïdes : prototype 0.2, usine de droïdes dans un terrain vague, en solo ou à deux.">
+<meta name="description" content="Two Supply — Droïdes : version 0.3, usine de droïdes en 10 niveaux dans un terrain vague, en solo ou à deux.">
 <title>Two Supply — Droïdes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,14 +21,18 @@
 
 <div id="hud" hidden>
   <div id="look-zone" aria-hidden="true"></div>
-  <button id="level-card" type="button" aria-label="Objectifs du niveau">
-    <span class="lv-top"><b id="level-name"></b><span id="level-count"></span></span>
-    <span id="level-next"></span>
-    <ul id="level-goals"></ul>
-  </button>
+  <div class="hud-tl">
+    <button id="level-card" type="button" aria-label="Objectifs du niveau">
+      <span class="lv-top"><b id="level-name"></b><span id="level-count"></span></span>
+      <span id="level-next"></span>
+      <ul id="level-goals"></ul>
+    </button>
+    <div id="power" hidden></div>
+  </div>
   <div id="stock" class="bar"></div>
   <div class="hud-tr">
     <div id="mode-chip"><i class="dot"></i><span id="mode-name"></span></div>
+    <span id="credits" class="chip-btn ghosted"></span>
     <button id="btn-usine" class="chip-btn" type="button">Usine</button>
     <i id="net-dot" title="Connexion"></i>
   </div>
@@ -42,6 +46,7 @@
       <button id="btn-zin" class="round tiny" type="button" aria-label="Zoomer">+</button>
       <button id="btn-zout" class="round tiny" type="button" aria-label="Dézoomer">−</button>
     </div>
+    <button id="btn-ctx" class="ctx-btn" type="button" hidden></button>
     <button id="btn-call" class="round small" type="button" aria-label="Appeler ton partenaire">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4zm12.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
       <span>Appeler</span>
@@ -62,10 +67,18 @@
     <div class="brand">
       <div class="hazard"></div>
       <h1>TWO<span>SUPPLY</span></h1>
-      <p class="kicker">Droïdes · prototype 0.2</p>
+      <p class="kicker">Droïdes · version 0.3 · 10 niveaux</p>
       <p class="tag">Un terrain vague, des débris, des créatures de ferraille. Construisez à la main l’usine qui fabriquera vos premiers droïdes, puis faites-en vos employés.</p>
     </div>
     <div class="home-actions">
+      <div id="resume" class="resume" hidden>
+        <p id="resume-info"></p>
+        <div class="row">
+          <button id="btn-resume-solo" class="btn primary" type="button">Reprendre seul</button>
+          <button id="btn-resume-duo" class="btn" type="button">Reprendre à deux</button>
+        </div>
+        <button id="btn-resume-del" class="link-btn" type="button">Effacer la sauvegarde</button>
+      </div>
       <button id="btn-solo" class="btn primary" type="button">Jouer seul <small>avec un coéquipier IA</small></button>
       <button id="btn-host" class="btn" type="button">Créer une partie à deux</button>
       <div class="join-row">
@@ -98,7 +111,8 @@
     <h2>Bienvenue dans le terrain vague</h2>
     <ol class="tips">
       <li><b>Marcher :</b> pouce à gauche. <b>Tourner la caméra :</b> glisse ailleurs sur l’écran. <b>Zoomer :</b> pince l’écran ou boutons + et −.</li>
-      <li><b>Fouiller</b> les débris (garder appuyé) remplit ton sac : fer, verre, argile, calcaire, eau. Vide-le à l’<b>entrepôt</b>, puis apporte les matériaux aux chantiers.</li>
+      <li><b>Fouiller</b> les débris (garder appuyé) remplit ton sac. Ils changent de place à chaque partie ; les infos s’affichent quand tu t’approches. À l’<b>entrepôt</b>, choisis exactement ce que tu prends et ce que tu déposes.</li>
+      <li>Près d’une machine, le bouton <b>Recettes</b> choisit ce qu’elle fabrique. Plusieurs recettes cochées : l’opérateur alterne 2 de chaque.</li>
       <li><span class="badge solo"></span> blanc : seul. <span class="badge duo"></span> doré à bandes : à <b>deux</b> (monter une machine, porter le cœur d’assembleur, attraper une créature).</li>
       <li id="howto-solo">En solo, ton <b>coéquipier IA</b> te suit et prend tout seul l’autre côté des tâches à deux.</li>
     </ol>
@@ -111,6 +125,7 @@
     <div class="tabs">
       <button class="tab on" data-tab="entrepot" type="button">Entrepôt et machines</button>
       <button class="tab" data-tab="org" type="button">Organigramme</button>
+      <button class="tab" data-tab="vestiaire" type="button">Vestiaire</button>
       <button class="tab" data-tab="betes" type="button">Créatures</button>
     </div>
     <div id="usine-body"></div>
@@ -127,12 +142,28 @@
   </div>
 </section>
 
+<section id="screen-entrepot" class="screen overlay">
+  <div class="panel wide tall">
+    <h2>Entrepôt</h2>
+    <div id="entrepot-body"></div>
+    <button id="btn-entrepot-close" class="btn" type="button">Fermer</button>
+  </div>
+</section>
+
+<section id="screen-recettes" class="screen overlay">
+  <div class="panel wide tall">
+    <h2 id="recettes-title">Recettes</h2>
+    <div id="recettes-body"></div>
+    <button id="btn-recettes-close" class="btn" type="button">Fermer</button>
+  </div>
+</section>
+
 <section id="screen-win" class="screen overlay">
   <div class="panel">
     <div class="hazard small"></div>
-    <h2>Prototype terminé !</h2>
+    <h2>Usine terminée !</h2>
     <p class="sub" id="win-stats"></p>
-    <p class="sub">La suite de l’organigramme (agent de production, achats packaging, ingénieur process, adjoint, chef de production) arrive dans la prochaine version.</p>
+    <p class="sub">Les 10 niveaux sont faits. Vous pouvez continuer à livrer des commandes et habiller vos droïdes.</p>
     <button id="btn-continue" class="btn primary" type="button">Continuer à jouer</button>
   </div>
 </section>
@@ -140,7 +171,7 @@
 <section id="screen-lost" class="screen overlay">
   <div class="panel">
     <h2>Connexion perdue</h2>
-    <p class="sub">Le lien avec l’autre téléphone s’est coupé (écran verrouillé, réseau…). Recréez une partie pour continuer.</p>
+    <p class="sub">Le lien avec l’autre téléphone s’est coupé (écran verrouillé, réseau…). La partie est sauvegardée sur le téléphone hôte : il peut la reprendre depuis l’accueil.</p>
     <button id="btn-home" class="btn primary" type="button">Retour à l’accueil</button>
   </div>
 </section>
