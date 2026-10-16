@@ -1,8 +1,8 @@
-// Two Supply — Droïdes (version 0.3) : relie modes de jeu, connexion, sauvegarde, simulation, caméra et rendu.
-import { newState, restoreState, step, drainFx, forceBuild } from './sim.js';
+// Two Supply — Droïdes (version 0.4) : relie modes de jeu, connexion, sauvegarde, simulation, caméra et rendu.
+import { newState, restoreState, step, drainFx, forceBuild, commandsOnly } from './sim.js';
 import { createBot, botInput, botLabel } from './bot.js';
 import { obstacles, moveCircle } from './move.js';
-import { SPEED, LEVELS, SAVE_KEY } from './config.js';
+import { SPEED, LEVELS, SAVE_KEY, T, other } from './config.js';
 import { height, genWorld } from './world.js';
 import { Renderer } from './gl.js';
 import { buildScene, updateScene } from './scene.js';
@@ -54,13 +54,13 @@ function readSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw);
-    return d && d.st && d.st.v === 3 ? d : null;
+    return d && d.st && d.st.v === 4 ? d : null;
   } catch (e) { return null; }
 }
 function saveGame() {
   if (!app.isHost || !app.sim || !app.playing) return;
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ at: Date.now(), st: app.sim }, round));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ at: Date.now(), code: app.mode === 'duo' ? app.code : null, st: app.sim }, round));
     app.lastSave = performance.now();
   } catch (e) { /* stockage indisponible : on continue sans sauvegarde */ }
 }
@@ -73,9 +73,18 @@ function showResume() {
   if (!d) return;
   const s = d.st, t = Math.round(s.time);
   const when = new Date(d.at).toLocaleString('fr-FR', { weekday: 'long', hour: '2-digit', minute: '2-digit' });
-  $('resume-info').innerHTML = `<b>Partie sauvegardée</b> · niveau ${s.level + 1}/10 (${LEVELS[s.level].name}) · ${s.droids.length} droïdes · ${s.credits} crédits · ${Math.floor(t / 60)} min de jeu<br><span class="muted">${when}</span>`;
+  const lock = s.gen && s.gen.lockUntil > Date.now();
+  $('resume-info').innerHTML = `<b>Partie sauvegardée</b> · niveau ${s.level + 1}/${LEVELS.length} (${LEVELS[s.level].name}) · ${s.droids.length} droïdes · ${s.credits} crédits · ${Math.floor(t / 60)} min de jeu<br><span class="muted">${when}</span>`
+    + (lock ? `<br><b class="bad">Surchauffe : reprise dans <span id="resume-lock"></span></b>` : '');
 }
 showResume();
+setInterval(() => {
+  const el = document.getElementById('resume-lock');
+  if (!el || !app.saved) return;
+  const left = Math.max(0, app.saved.st.gen.lockUntil - Date.now());
+  const sec = Math.ceil(left / 1000);
+  el.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}, 500);
 
 // ---------- accueil ----------
 function goFullscreen() {
@@ -97,14 +106,14 @@ function playSolo(saved) {
 $('btn-solo').addEventListener('click', () => playSolo(null));
 $('btn-resume-solo').addEventListener('click', () => playSolo(app.saved && app.saved.st));
 $('btn-host').addEventListener('click', () => hostGame(null));
-$('btn-resume-duo').addEventListener('click', () => hostGame(app.saved && app.saved.st));
+$('btn-resume-duo').addEventListener('click', () => hostGame(app.saved && app.saved.st, app.saved && app.saved.code));
 let delArmed = false;
 $('btn-resume-del').addEventListener('click', () => {
   if (!delArmed) { delArmed = true; $('btn-resume-del').textContent = 'Toucher encore pour effacer'; setTimeout(() => { delArmed = false; $('btn-resume-del').textContent = 'Effacer la sauvegarde'; }, 3000); return; }
   clearSave(); showResume();
 });
 
-async function hostGame(saved) {
+async function hostGame(saved, prevCode) {
   unlockAudio(); goFullscreen();
   UI.setMsg('home-msg', 'Création de la partie…');
   $('btn-host').disabled = true; $('btn-resume-duo').disabled = true;
@@ -113,9 +122,9 @@ async function hostGame(saved) {
     const link = new Link(Peer);
     app.link = link; app.mode = 'duo';
     link.onMessage = hostMessage;
-    link.onClose = lost;
-    link.onOpen = () => startGame(saved);
-    const code = await link.host();
+    link.onClose = partnerLost;
+    link.onOpen = () => { if (!app.playing) startGame(saved); else partnerBack(); };
+    const code = await link.host(prevCode);
     app.isHost = true; app.myId = 'A'; app.code = code;
     $('wait-code').textContent = code;
     const qr = $('qr');
@@ -158,7 +167,7 @@ async function join(raw, gesture) {
     app.link = link; app.mode = 'duo';
     app.isHost = false; app.myId = 'B'; app.code = code;
     link.onMessage = clientMessage;
-    link.onClose = lost;
+    link.onClose = hostLost;
     await link.join(code);
     link.send({ t: 'hello', v: 3 });
     UI.setMsg('home-msg', 'Connecté : la partie démarre…');
@@ -175,6 +184,8 @@ function startGame(saved) {
   if (saved) {
     app.sim = restoreState(JSON.parse(JSON.stringify(saved)));
     app.sim.mode = app.mode;
+    const away = Date.now() - ((app.saved && app.saved.at) || Date.now());
+    if (away >= T.restReset * 1000) app.sim.gen.play = 0;
   } else app.sim = newState(app.mode);
   app.st = app.sim;
   app.wonShown = !!app.sim.won;
@@ -184,6 +195,8 @@ function startGame(saved) {
 
 function beginGame(resumed) {
   app.playing = true;
+  app.paused = false;
+  linkBack();
   if (!scene) scene = buildScene(app.st.mode === 'solo' ? 'solo' : 'duo');
   UI.setPlayerColors(app.myId);
   UI.show('');
@@ -202,7 +215,7 @@ function beginGame(resumed) {
 }
 
 // ---------- messages réseau ----------
-const CMDS = new Set(['spec', 'take', 'put', 'putall', 'request', 'recipes', 'buy', 'wear']);
+const CMDS = new Set(['spec', 'take', 'put', 'putall', 'request', 'recipes', 'buy', 'wear', 'pack', 'ztake', 'zput', 'zputall']);
 function hostMessage(m) {
   if (!m || typeof m !== 'object') return;
   const r = app.remote;
@@ -216,7 +229,7 @@ function hostMessage(m) {
     case 'cmd': {
       if (!CMDS.has(m.c)) break;
       const e = { c: m.c };
-      for (const k of ['type', 'item', 'mach', 'outfit']) if (typeof m[k] === 'string' || m[k] === null) e[k] = m[k];
+      for (const k of ['type', 'item', 'mach', 'outfit', 'slot']) if (typeof m[k] === 'string' || m[k] === null) e[k] = m[k];
       if (Number.isFinite(m.n)) e.n = m.n;
       if (Array.isArray(m.sel)) e.sel = m.sel.filter((x) => typeof x === 'string').slice(0, 12);
       r.events.push(e);
@@ -227,12 +240,12 @@ function hostMessage(m) {
 }
 function clientMessage(m) {
   if (!m || typeof m !== 'object') return;
-  if (m.t === 'start') {
+  if (m.t === 'start' && m.st) {
     genWorld(m.st.seed);
     app.st = m.st;
     beginGame(m.st.time > 5);
-  } else if (m.t === 's' && app.playing) {
-    try { app.st = JSON.parse(m.j); } catch (e) { return; }
+  } else if (m.t === 's' && app.playing && m.st) {
+    app.st = m.st;
     if (Array.isArray(m.fx)) m.fx.forEach(handleFx);
   }
 }
@@ -250,6 +263,7 @@ function openMenu(kind, mach) {
   if (kind === 'entrepot') { UI.fillEntrepot(st, app.myId, sendCmd); UI.overlay('screen-entrepot', true); }
   else if (kind === 'spec') { UI.fillSpec(st, app.myId, pickSpec); UI.overlay('screen-spec', true); }
   else if (kind === 'recettes' && mach && st.machines[mach]) { app.recMach = mach; UI.fillRecettes(st, mach, sendCmd); UI.overlay('screen-recettes', true); }
+  else if (kind === 'zone' && st.machines.zone) { UI.fillZone(st, app.myId, sendCmd); UI.overlay('screen-zone', true); }
 }
 
 function handleFx(f) {
@@ -257,15 +271,18 @@ function handleFx(f) {
     case 'toast': UI.toast(f.text, f.tone); break;
     case 'sfx': play(f.s); break;
     case 'call':
-      UI.toast(f.text, 'call');
-      UI.pointTo(f.x, f.z);
+      UI.callAlert(f.text, other(app.myId));
+      app.callUntil = performance.now() + 6000;
       play('call');
-      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
       break;
     case 'menu': if (!UI.isOverlay()) openMenu(f.menu); break;
+    case 'cred': UI.floatCredit(f.x, f.z, f.n); play('cred'); break;
+    case 'overheat': play('overheat'); break;
     case 'level':
       play('won');
       UI.banner(`Niveau ${f.n}`, f.name);
+      UI.fillLevelUp(f.n);
+      UI.overlay('screen-levelup', true);
       break;
     case 'save': saveGame(); break;
     case 'won': if (!app.wonShown) { app.wonShown = true; play('won'); showWin(); } break;
@@ -283,14 +300,74 @@ function showWin() {
   $('win-stats').textContent = `${s.droids.length} droïdes dans l’usine, ${Object.keys(s.machines).length} machines, ${s.stats.orders} commandes livrées, en ${mm} min ${ss} s.`;
   UI.overlay('screen-win', true);
 }
-function lost() { $('net-dot').classList.add('bad'); saveGame(); UI.overlay('screen-lost', true); }
+// ---------- liaison coupée : pause, puis reconnexion automatique ----------
+function showLost(title, text, waiting) {
+  $('lost-title').textContent = title;
+  $('lost-text').textContent = text;
+  $('lost-spin').hidden = !waiting;
+  $('net-dot').classList.add('bad');
+  UI.overlay('screen-lost', true);
+}
+function linkBack() {
+  $('net-dot').classList.remove('bad');
+  UI.overlay('screen-lost', false);
+}
+// Hôte : la partie se met en pause et attend que le partenaire revienne (même code)
+function partnerLost() {
+  app.paused = true;
+  Object.assign(app.remote, { held: false, mx: 0, mz: 0, events: [] });
+  saveGame();
+  showLost('Partenaire déconnecté', `La partie est en pause et sauvegardée. Ton partenaire revient tout seul dès que son téléphone se reconnecte (code ${app.code}).`, true);
+}
+function partnerBack() {
+  app.paused = false;
+  linkBack();
+  UI.toast('Ton partenaire est de retour !', 'good');
+  play('ok');
+}
+// Invité : il retente de rejoindre le même code pendant 2 minutes
+let reconnecting = false;
+async function hostLost() {
+  if (reconnecting || !app.code) return;
+  reconnecting = true;
+  showLost('Connexion perdue', 'Reconnexion à la partie en cours…', true);
+  const until = performance.now() + 120000;
+  while (performance.now() < until) {
+    try {
+      const Peer = await getPeerClass(NET);
+      const link = new Link(Peer);
+      link.onMessage = clientMessage;
+      link.onClose = hostLost;
+      try { if (app.link) app.link.destroy(); } catch (e) { /* ignoré */ }
+      app.link = link;
+      await link.join(app.code, 7000);
+      link.send({ t: 'hello', v: 3 });
+      reconnecting = false;
+      linkBack();
+      UI.toast('Reconnecté !', 'good');
+      return;
+    } catch (e) {
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+  }
+  reconnecting = false;
+  showLost('Connexion perdue', 'Impossible de rejoindre la partie. Si ton partenaire l’a relancée depuis l’accueil, retape son code.', false);
+}
 
 // ---------- boutons ----------
 $('btn-go').addEventListener('click', () => {
   UI.overlay('screen-howto', false);
   if (app.st && app.st.level === 0 && !app.st.machines.forge) UI.pointTo(-17, -10, 5);
 });
-$('btn-usine').addEventListener('click', () => { UI.fillUsine(app.st, app.usineTab, sendCmd); UI.overlay('screen-usine', true); });
+function openUsine(tab) { if (tab) app.usineTab = tab; UI.fillUsine(app.st, app.usineTab, sendCmd); UI.overlay('screen-usine', true); }
+$('btn-usine').addEventListener('click', () => openUsine(app.usineTab === 'org' || app.usineTab === 'vestiaire' ? 'entrepot' : null));
+$('btn-team').addEventListener('click', () => openUsine('org'));
+$('btn-vest').addEventListener('click', () => openUsine('vestiaire'));
+$('btn-lock-team').addEventListener('click', () => openUsine('org'));
+$('btn-lock-vest').addEventListener('click', () => openUsine('vestiaire'));
+$('btn-lock-home').addEventListener('click', () => { saveGame(); if (app.link) app.link.destroy(); location.href = location.pathname + (NET === 'fake' ? '?net=fake' : ''); });
+$('btn-zone-close').addEventListener('click', () => UI.overlay('screen-zone', false));
+$('btn-lvl-ok').addEventListener('click', () => UI.overlay('screen-levelup', false));
 $('btn-usine-close').addEventListener('click', () => UI.overlay('screen-usine', false));
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => { app.usineTab = t.dataset.tab; UI.fillUsine(app.st, app.usineTab, sendCmd); }));
 $('btn-spec-close').addEventListener('click', () => UI.overlay('screen-spec', false));
@@ -339,6 +416,14 @@ function frame(now) {
   const st = app.st;
   if (app.playing && st && renderer && scene) {
     const inp = input.read();
+    const locked = !!(st.gen && st.gen.lockUntil > Date.now());
+    if (locked !== app.locked) {
+      app.locked = locked;
+      UI.overlay('screen-lock', locked);
+      if (!locked && app.wasLockedOnce) UI.toast('Le générateur a refroidi : rechargez-le en charbon ou en bois.', 'warn');
+      if (locked) app.wasLockedOnce = true;
+    }
+    if (locked) UI.fillLock(st.gen.lockUntil - Date.now());
     const frozen = UI.isOverlay();
     const jx = frozen ? 0 : inp.mx, jz = frozen ? 0 : inp.mz;
     // Joystick relatif à la caméra
@@ -364,13 +449,28 @@ function frame(now) {
       cam.yaw += d * Math.min(1, dt * 1.4 * forward);
     }
 
-    if (app.isHost) {
+    if (app.isHost && app.paused) {
+      app.localEvents = [];
+      if (now - app.lastSave > 20000) saveGame();
+    } else if (app.isHost && locked) {
+      // Pause obligatoire : le temps de jeu ne compte pas, seuls les achats du vestiaire passent
+      const r = app.remote;
+      commandsOnly(app.sim, { A: { events: app.localEvents }, B: { events: r.events } });
+      app.localEvents = []; r.events = [];
+      for (const f of drainFx(app.sim)) { if (f.to === 'A' || f.to === 'all') handleFx(f); if (app.link && (f.to === 'B' || f.to === 'all') && f.k !== 'save') app.pendingFx.push(f); }
+      if (app.link && now - app.lastSend > 250) { app.link.send('{"t":"s","fx":' + JSON.stringify(app.pendingFx) + ',"st":' + JSON.stringify(app.sim, round) + '}'); app.pendingFx = []; app.lastSend = now; }
+      if (now - app.lastSave > 20000) saveGame();
+    } else if (app.isHost) {
       const events = (frozen ? [] : inp.events).concat(app.localEvents);
       app.localEvents = [];
       const A = { x: me.x, z: me.z, rot: me.rot, mx, mz, held: inp.held && !frozen, events };
       let B;
       if (app.mode === 'solo') B = botInput(app.sim, app.bot, dt, A);
       else { const r = app.remote; B = { x: r.x, z: r.z, rot: r.rot, mx: r.mx, mz: r.mz, held: r.held, events: r.events }; r.events = []; }
+      app.sim.clock = Date.now();
+      // Revenu après 30 minutes ou plus sans jouer (téléphone en veille) : le compteur d'une heure repart à zéro
+      if (app.lastWall && Date.now() - app.lastWall >= T.restReset * 1000) app.sim.gen.play = 0;
+      app.lastWall = Date.now();
       step(app.sim, dt, { A, B });
       for (const f of drainFx(app.sim)) {
         if (f.to === 'A' || f.to === 'all') handleFx(f);
@@ -378,12 +478,13 @@ function frame(now) {
       }
       // État compact (nombres arrondis) envoyé 10 fois par seconde
       if (app.link && now - app.lastSend > 100) {
-        app.link.send({ t: 's', j: JSON.stringify(app.sim, round), fx: app.pendingFx });
+        // Texte JSON prêt à l'emploi : la liaison le découpe s'il est trop gros
+        app.link.send('{"t":"s","fx":' + JSON.stringify(app.pendingFx) + ',"st":' + JSON.stringify(app.sim, round) + '}');
         app.pendingFx = [];
         app.lastSend = now;
       }
       if (now - app.lastSave > 20000) saveGame();
-    } else if (now - app.lastSend > 66) {
+    } else if (app.link && now - app.lastSend > 66) {
       app.link.send({ t: 'in', x: Math.round(me.x * 100) / 100, z: Math.round(me.z * 100) / 100, r: Math.round(me.rot * 100) / 100, mx, mz, h: inp.held });
       app.lastSend = now;
     }
@@ -403,7 +504,10 @@ function frame(now) {
     renderer.render(scene.root, dt);
     labels.update(renderer, UI.worldLabels(st, app.myId, me));
     UI.updateHud(st, app.myId, { bot: app.bot ? botLabel(app.bot) : '', me });
+    // Appel du partenaire : la flèche le suit pendant quelques secondes
+    if (app.callUntil && now < app.callUntil) { const o = st.players[other(app.myId)]; UI.pointTo(o.x, o.z, 0.3); }
     UI.updateArrow(renderer);
+    UI.updateFloaters(renderer);
     // Menus ouverts : mis à jour en direct
     menuT += dt;
     if (menuT > 0.25) {
@@ -413,6 +517,7 @@ function frame(now) {
       if (on('screen-entrepot')) UI.fillEntrepot(st, app.myId, sendCmd);
       if (on('screen-recettes') && app.recMach) UI.fillRecettes(st, app.recMach, sendCmd);
       if (on('screen-spec')) UI.fillSpec(st, app.myId, pickSpec);
+      if (on('screen-zone')) UI.fillZone(st, app.myId, sendCmd);
     }
     adapt(dt);
   }

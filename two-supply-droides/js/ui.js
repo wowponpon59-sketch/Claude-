@@ -1,10 +1,10 @@
 // Interface : écrans, HUD, menus, commandes tactiles, caméra et repères au-dessus des objets.
 import {
   ITEMS, ITEM_ORDER, RAW, RAW_LEVEL, SAC_MAX, NODE_TYPES, MACHINES, PLOTS, ENTREPOT, CORE, DROIDS, SPEC_ORDER,
-  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, LABEL_RANGE, REACH, other,
+  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, QC_BASES, LABEL_RANGE, REACH, isDecl, other,
 } from './config.js';
 import { NODES, height, PLOT_BY_ID, plotBox } from './world.js';
-import { postL, postR, plotUnlocked, cadence, recipeAvail, missingIn, activeOrders, needPower, isProd } from './sim.js';
+import { postL, postR, plotUnlocked, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, goalProgress, packPrice, waitWhy } from './sim.js';
 import { boxDist } from './move.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +17,7 @@ export const ICON = {
 };
 
 // ---------- pictogrammes : une forme et une couleur par matière ----------
+const RBADGE = '<circle cx="18.5" cy="5.5" r="4.6" fill="#ef5a50" stroke="#15171a" stroke-width="1"/><path d="M16.6 3.6l3.8 3.8M20.4 3.6l-3.8 3.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>';
 const QBADGE = '<circle cx="18.5" cy="5.5" r="4.6" fill="#f5c400" stroke="#15171a" stroke-width="1"/><path d="M17.1 4.4a1.5 1.5 0 1 1 2.1 1.4c-.5.3-.7.6-.7 1.1M18.5 8.2v.1" stroke="#15171a" stroke-width="1.2" fill="none" stroke-linecap="round"/>';
 const SHAPES = {
   fer: (c) => `<path d="M4 5h16v3.4h-5.6v7.2H20V19H4v-3.4h5.6V8.4H4z" fill="${c}" stroke="#4d5a68" stroke-width=".8"/><circle cx="6" cy="6.7" r=".9" fill="#4d5a68"/><circle cx="18" cy="17.3" r=".9" fill="#4d5a68"/>`,
@@ -37,7 +38,7 @@ const SHAPES = {
   tole: (c) => `<path d="M3 16l4-4h14l-4 4z" fill="#7f8c9a"/><path d="M3 13l4-4h14l-4 4z" fill="${c}"/><path d="M3 10l4-4h14l-4 4z" fill="#dbe3ec"/>`,
   silicium: (c) => `<circle cx="12" cy="12" r="8.5" fill="${c}"/><path d="M6 9h12M5 12h14M6 15h12M9 5v14M12 3.5v17M15 5v14" stroke="#c9c1ff" stroke-width=".7"/><path d="M8 19.5h8" stroke="#2a1f8a" stroke-width="2"/>`,
   circuitA: (c) => `<rect x="5.5" y="5.5" width="13" height="13" rx="1.5" fill="${c}"/><path d="M9 3v2.5M12 3v2.5M15 3v2.5M9 18.5V21M12 18.5V21M15 18.5V21M3 9h2.5M3 15h2.5M18.5 9H21M18.5 15H21" stroke="#ffe38a" stroke-width="1.4"/><path d="M12 8l1.2 2.6 2.8.3-2.1 1.9.6 2.8L12 14.2l-2.5 1.4.6-2.8L8 10.9l2.8-.3z" fill="#7a5600"/>`,
-  rebut: (c) => `<path d="M4 15l2-7 5 2 3-5 5 4-1 8-7 2z" fill="${c}" stroke="#5c6168" stroke-width=".9"/><path d="M8 8l8 8M16 8l-8 8" stroke="#ef5a50" stroke-width="2.2" stroke-linecap="round"/>`,
+  isolant: (c) => `<rect x="10.5" y="2" width="3" height="20" rx="1" fill="#6b7480"/><g fill="${c}" stroke="#2b5fb8" stroke-width="1.1"><ellipse cx="12" cy="6" rx="7" ry="2.2"/><ellipse cx="12" cy="11" rx="8" ry="2.4"/><ellipse cx="12" cy="16" rx="7" ry="2.2"/></g>`,
   carton: (c) => `<path d="M3 9l9-4 9 4v10l-9 3-9-3z" fill="${c}"/><path d="M3 9l9 4 9-4M12 13v9" stroke="#8a6232" stroke-width="1"/><path d="M7.5 7l9 4" stroke="#e8c896" stroke-width="1.3"/>`,
   caisse: (c) => `<rect x="3" y="5" width="18" height="15" rx="1.5" fill="${c}"/><path d="M3 9h18M3 16h18" stroke="#8a5f17" stroke-width="1.2"/><circle cx="12" cy="12.5" r="2.6" fill="#3a2a10"/><rect x="10" y="12" width="4" height="1" fill="#ffd27a"/>`,
   colis: (c) => `<rect x="3" y="6" width="18" height="14" rx="1.5" fill="${c}"/><path d="M12 6v14" stroke="#9c6e31" stroke-width="3"/><path d="M15 10h4m-2-2l2 2-2 2" stroke="#3b6fd6" stroke-width="1.6" fill="none" stroke-linecap="round"/>`,
@@ -48,9 +49,12 @@ export function itemIcon(k) {
   let inner;
   if (def.kind === 'kit') {
     inner = `<rect x="3" y="7" width="18" height="13" rx="2.5" fill="${def.css}" stroke="#15171a" stroke-width=".8"/><path d="M9 7V5h6v2" stroke="${def.css}" stroke-width="2" fill="none"/><text x="12" y="17.2" text-anchor="middle" font-size="8.5" font-weight="800" font-family="Barlow, sans-serif" fill="${k === 'k_lecteur' || k === 'k_planning' ? '#15171a' : '#fff'}">${def.glyph}</text>`;
+  } else if (def.kind === 'decl') {
+    inner = `<g opacity=".75">${SHAPES[def.base](def.css)}</g>` + QBADGE;
+  } else if (def.kind === 'rebut') {
+    inner = `<g opacity=".55" filter="grayscale(1)">${SHAPES[def.base]('#7d8288')}</g>` + RBADGE;
   } else {
-    const base = k.endsWith('B') && def.check ? k.slice(0, -1) : k;
-    inner = SHAPES[base](def.css) + (def.check ? QBADGE : '');
+    inner = SHAPES[k](def.css);
   }
   return `<svg class="mi" viewBox="0 0 24 24" role="img" aria-label="${esc(def.name)}"><title>${esc(def.name)}</title>${inner}</svg>`;
 }
@@ -58,6 +62,8 @@ const count = (o) => Object.values(o).reduce((a, b) => a + b, 0);
 export const listItems = (o, cls = '') => ITEM_ORDER.filter((k) => (o[k] || 0) > 0).map((k) => `<span class="it ${cls}">${itemIcon(k)}${o[k]}</span>`).join('');
 const recipeLine = (rid) => {
   const r = RECIPES[rid];
+  if (r.any === 'decl') return `<span class="it">${itemIcon('circuit_d')}</span><span class="arrow">→</span><span class="it">${itemIcon('circuit')}</span><span class="muted">ou</span><span class="it">${itemIcon('circuit_r')}</span>`;
+  if (r.any === 'rebut') return `<span class="it">${itemIcon('carcasse_r')}</span><span class="arrow">→</span><span class="it">${itemIcon('fer')}</span><span class="muted">matière d’origine</span>`;
   const side = (o) => Object.entries(o).map(([k, n]) => (k === 'droide' ? `<span class="it">🤖 ${n}</span>` : `<span class="it">${itemIcon(k)}${n}</span>`)).join('');
   return `${side(r.in)}<span class="arrow">→</span>${side(r.out)}`;
 };
@@ -85,26 +91,29 @@ export function updateHud(st, myId, extra) {
   const me = st.players[myId];
   const L = LEVELS[st.level];
   const done = L.goals.filter((g) => st.goals[g.id]).length;
-  $('level-name').textContent = `Niveau ${st.level + 1}/10 · ${L.name}`;
+  const gtext = (g) => { const pr = !st.goals[g.id] && goalProgress(st, g); return g.text + (pr ? ` (${pr[0]}/${pr[1]})` : ''); };
+  $('level-name').textContent = `Niveau ${st.level + 1}/${LEVELS.length} · ${L.name}`;
   $('level-count').textContent = `${done}/${L.goals.length}`;
   const next = L.goals.find((g) => !st.goals[g.id]);
-  $('level-next').textContent = st.won ? 'Usine terminée : bravo !' : next ? next.text : '';
-  setHtml($('level-goals'), L.goals.map((g) => `<li class="${st.goals[g.id] ? 'ok' : ''}">${g.text}</li>`).join(''));
+  $('level-next').textContent = st.won ? 'Usine terminée : bravo !' : next ? gtext(next) : '';
+  setHtml($('level-goals'), (L.rodage ? '<li class="tagr">Rodage : profitez de votre usine</li>' : '') + L.goals.map((g) => `<li class="${st.goals[g.id] ? 'ok' : ''}">${gtext(g)}</li>`).join(''));
 
   const sac = count(me.sac);
   setHtml($('sac'), `<span class="lbl">Sac ${sac}/${SAC_MAX}</span>${listItems(me.sac) || '<span class="empty">vide</span>'}`);
   $('sac').classList.toggle('full', sac >= SAC_MAX);
   setHtml($('stock'), `<span class="lbl">Entrepôt</span>${listItems(st.stock) || '<span class="empty">vide</span>'}`);
   $('credits').textContent = `${st.credits} crédits`;
+  $('btn-vest').classList.toggle('dot', canBuy(st));
 
   const pw = $('power');
   if (needPower(st)) {
-    const gen = Object.values(st.machines).find((m) => m.type === 'generateur');
+    const gen = st.machines.generateur;
     let txt, bad = false;
     if (gen) {
-      const fuel = (gen.inp.charbon || 0) + (gen.inp.bois || 0);
-      bad = gen.broken || (fuel === 0 && st.power.energy < 1);
-      txt = gen.broken ? 'Générateur en panne' : `Générateur · ${gen.inp.charbon || 0} charbon · ${gen.inp.bois || 0} bois`;
+      const units = genFill(st, gen);
+      const left = Math.max(0, Math.ceil((T.overheatAt - st.gen.play) / 60));
+      bad = gen.broken || units === 0;
+      txt = gen.broken ? 'Générateur en panne' : `Générateur ${units}/${T.genCap} · surchauffe dans ${left} min`;
     } else {
       bad = st.power.battery <= 0;
       txt = bad ? 'Plus de courant : construis le générateur' : `Batterie · ${clock(st.power.battery)}`;
@@ -134,8 +143,18 @@ export function updateHud(st, myId, extra) {
   if (ctx) { cb.textContent = ctx.label; cb.dataset.kind = ctx.kind; cb.dataset.mach = ctx.mach || ''; }
 }
 
+// Une tenue est-elle à portée de crédits ?
+function canBuy(st) {
+  for (const t of SPEC_ORDER) {
+    if (DROIDS[t].lvl > st.level) continue;
+    for (const [o, def] of Object.entries(OUTFITS)) if (!st.wardrobe.owned[t + ':' + o] && st.credits >= def.price) return true;
+  }
+  return false;
+}
+
 export function contextOf(st, me) {
   if (boxDist(me, ENTREPOT) <= REACH + 0.6) return { kind: 'entrepot', label: 'Entrepôt' };
+  if (st.machines.zone && boxDist(me, plotBox(PLOT_BY_ID.zone)) <= REACH + 0.6) return { kind: 'zone', label: 'Déclassés' };
   let best = null, bd = REACH + 0.6;
   for (const m of Object.values(st.machines)) {
     if (!isProd(m)) continue;
@@ -148,7 +167,7 @@ export function contextOf(st, me) {
 // ---------- menu de l'entrepôt ----------
 export function fillEntrepot(st, myId, send) {
   const p = st.players[myId];
-  const keys = ITEM_ORDER.filter((k) => (st.stock[k] || 0) > 0 || (p.sac[k] || 0) > 0);
+  const keys = ITEM_ORDER.filter((k) => !isDecl(k) && ((st.stock[k] || 0) > 0 || (p.sac[k] || 0) > 0));
   const room = SAC_MAX - count(p.sac);
   let html = `<p class="sub">Sac : ${count(p.sac)}/${SAC_MAX}. Prends exactement ce dont tu as besoin.</p>`;
   html += '<div class="erows">';
@@ -159,7 +178,8 @@ export function fillEntrepot(st, myId, send) {
       <span class="ebtns"><button data-a="take" data-k="${k}" data-n="1" ${s && room ? '' : 'disabled'}>+1</button><button data-a="take" data-k="${k}" data-n="5" ${s && room ? '' : 'disabled'}>+5</button><button data-a="put" data-k="${k}" data-n="99" ${b ? '' : 'disabled'}>Déposer</button></span></div>`;
   }
   html += '</div>';
-  if (count(p.sac)) html += '<button class="btn small-btn" data-a="putall">Tout déposer</button>';
+  if (keys.some((k) => p.sac[k])) html += '<button class="btn small-btn" data-a="putall">Tout déposer</button>';
+  if (ITEM_ORDER.some((k) => isDecl(k) && p.sac[k])) html += '<p class="muted">Les pièces déclassées de ton sac vont à la zone des déclassés.</p>';
   if (st.droids.some((d) => d.type === 'recherche')) {
     const known = RAW.filter((k) => RAW_LEVEL[k] <= st.level);
     const req = st.request;
@@ -179,6 +199,32 @@ export function fillEntrepot(st, myId, send) {
   }));
 }
 
+// ---------- menu de la zone des déclassés ----------
+export function fillZone(st, myId, send) {
+  const p = st.players[myId], z = st.machines.zone;
+  if (!z) return;
+  const keys = ITEM_ORDER.filter((k) => isDecl(k) && ((z.inp[k] || 0) > 0 || (p.sac[k] || 0) > 0));
+  const room = SAC_MAX - count(p.sac);
+  let html = '<p class="sub">Pièces déclassées en attente de contrôle. Au poste qualité, 1 sur 2 part au rebut (1 sur 3 avec le responsable qualité).</p><div class="erows">';
+  if (!keys.length) html += '<p class="muted">Aucune pièce déclassée pour l’instant.</p>';
+  for (const k of keys) {
+    const s = z.inp[k] || 0, b = p.sac[k] || 0;
+    html += `<div class="erow"><span class="ename">${itemIcon(k)}<b>${ITEMS[k].name}</b></span><span class="enum">${s}<small>zone</small></span><span class="enum">${b}<small>sac</small></span>
+      <span class="ebtns"><button data-a="ztake" data-k="${k}" data-n="1" ${s && room ? '' : 'disabled'}>+1</button><button data-a="ztake" data-k="${k}" data-n="5" ${s && room ? '' : 'disabled'}>+5</button><button data-a="zput" data-k="${k}" data-n="99" ${b ? '' : 'disabled'}>Déposer</button></span></div>`;
+  }
+  html += '</div>';
+  if (keys.some((k) => p.sac[k])) html += '<button class="btn small-btn" data-a="zputall">Tout déposer</button>';
+  const body = $('zone-body');
+  if (body.dataset.sig === html) return;
+  body.dataset.sig = html;
+  body.innerHTML = html;
+  body.querySelectorAll('button[data-a]').forEach((b) => b.addEventListener('click', () => {
+    const a = b.dataset.a;
+    if (a === 'zputall') send({ c: 'zputall' });
+    else send({ c: a, item: b.dataset.k, n: +b.dataset.n });
+  }));
+}
+
 // ---------- menu des recettes ----------
 export function fillRecettes(st, machId, send) {
   const m = st.machines[machId];
@@ -186,13 +232,13 @@ export function fillRecettes(st, machId, send) {
   const def = MACHINES[m.type];
   const pl = PLOT_BY_ID[machId];
   $('recettes-title').textContent = def.name + (pl.id.endsWith('2') ? ' n°2' : '');
-  let html = '<p class="sub">Coche ce que la machine fabrique. Avec plusieurs recettes cochées, l’opérateur alterne : 2 de l’une, puis 2 de l’autre.</p><div class="rrows">';
+  let html = '<p class="sub">Coche ce que la machine fabrique. Avec plusieurs recettes cochées, elle en fait 1 de chaque à tour de rôle ; s’il manque une matière, elle passe à la suivante.</p><div class="rrows">';
   for (const rid of def.recipes) {
     const r = RECIPES[rid];
     const ok = recipeAvail(st, rid);
-    if (!ok && r.until && st.level >= r.lvl) continue; // ancienne méthode
     const on = m.sel.includes(rid);
-    const lock = !ok ? (r.need && st.level >= r.lvl ? `Après : ${MACHINES[r.need].name.toLowerCase()}` : `Niveau ${r.lvl + 1}`) : '';
+    const missing = (r.need || []).filter((t) => !Object.values(st.machines).some((x) => x.type === t));
+    const lock = !ok ? (r.lvl > st.level ? `Niveau ${r.lvl + 1}` : `Après : ${missing.map((t) => MACHINES[t].name.toLowerCase()).join(' et ')}`) : '';
     html += `<button class="rrow ${on ? 'on' : ''}" data-r="${rid}" ${ok ? '' : 'disabled'}><span class="box">${on ? '✓' : ''}</span><span class="rname"><b>${r.name}</b><small>${r.time} s${lock ? ' · ' + lock : ''}</small></span><span class="rline">${recipeLine(rid)}</span></button>`;
   }
   html += '</div>';
@@ -209,17 +255,17 @@ export function fillRecettes(st, machId, send) {
 }
 
 // ---------- menu de spécialisation ----------
+const LOCK = '<svg class="lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10.5" rx="2" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" stroke="currentColor" stroke-width="2.2" fill="none"/></svg>';
+const lockedCard = (lvl, cls = 'spec-card') => `<div class="${cls} locked">${LOCK}<b>???</b><em>Niveau ${lvl + 1}</em></div>`;
 export function fillSpec(st, myId, onPick) {
   const p = st.players[myId];
   const have = (k) => (p.sac[k] || 0) + (st.stock[k] || 0);
   const body = $('spec-body');
   const html = SPEC_ORDER.map((type) => {
     const d = DROIDS[type];
-    const open = d.lvl <= st.level;
-    const ok = open && have(d.kit) >= 1;
-    const rid = Object.keys(RECIPES).find((r) => RECIPES[r].out[d.kit]);
-    const where = rid ? MACHINES[Object.keys(MACHINES).find((mk) => MACHINES[mk].recipes.includes(rid))].name.toLowerCase() : '';
-    const note = !open ? `<em>Niveau ${d.lvl + 1}</em>` : ok ? '' : `<em>Kit à fabriquer : ${where}</em>`;
+    if (d.lvl > st.level) return lockedCard(d.lvl);
+    const ok = have(d.kit) >= 1;
+    const note = ok ? '' : '<em>Kit à fabriquer à l’établi des kits</em>';
     return `<button class="spec-card" data-type="${type}" ${ok ? '' : 'disabled'} style="--c:${d.css}"><b>${d.name}</b><span class="muted">${d.desc}</span><span class="kit">${itemIcon(d.kit)} ${ITEMS[d.kit].name} · ${have(d.kit)} dispo</span>${note}</button>`;
   }).join('');
   if (body.dataset.sig === html) return;
@@ -251,11 +297,11 @@ export function fillUsine(st, tab, send) {
     const card = (id) => {
       const d = DROIDS[id];
       const lvl = d.lvl ?? 0;
-      const open = lvl <= st.level;
+      if (lvl > st.level) return lockedCard(lvl, 'org-card');
       const cnt = n(id);
-      return `<div class="org-card ${open ? '' : 'prevu'}" style="--c:${d.css}"><b>${d.name}</b><span>${d.kit ? ITEMS[d.kit].name : 'Droïde standard'}</span><em>${cnt ? cnt + ' dans l’usine' : open ? 'Disponible' : 'Niveau ' + (lvl + 1)}</em></div>`;
+      return `<div class="org-card" style="--c:${d.css}"><b>${d.name}</b><span>${d.kit ? ITEMS[d.kit].name : 'Droïde standard'}</span><em>${cnt ? cnt + ' dans l’usine' : 'Disponible'}</em></div>`;
     };
-    const rows = [['chef'], ['adjoint'], ['process', 'ingenieur', 'chefmaint', 'expert'], ['production', 'qualite', 'logistique', 'maintenance', 'recherche', 'achat'], ['ouvrier']];
+    const rows = [['chef'], ['adjoint'], ['process', 'ingenieur', 'chefmaint', 'expert'], ['production', 'qualite', 'adjq', 'logistique'], ['maintenance', 'recherche', 'achat'], ['ouvrier']];
     html += '<p class="muted">Vos droïdes sont vos employés. Chaque poste se forme à l’atelier de spécialisation, à partir d’un droïde standard et d’un kit fabriqué dans vos machines.</p><div class="org">';
     for (const r of rows) html += `<div class="org-row">${r.map(card).join('')}</div>`;
     html += '</div>';
@@ -266,19 +312,28 @@ export function fillUsine(st, tab, send) {
       html += `<div class="mrow"><b>${a.name}</b> <span class="muted">${a.desc} · installés : ${c}</span></div>`;
     }
   } else if (tab === 'vestiaire') {
-    html += `<p class="muted">Vous gagnez des crédits à chaque objectif, à chaque niveau et à chaque commande livrée. Une tenue achetée habille tous les droïdes de ce métier. Crédits : <b class="good">${st.credits}</b></p>`;
-    const types = SPEC_ORDER.filter((t) => DROIDS[t].lvl <= st.level || st.droids.some((d) => d.type === t));
-    if (!types.length) html += '<p class="muted">Formez un premier droïde spécialisé pour l’habiller.</p>';
-    for (const t of types) {
-      const wear = st.wardrobe.wear[t];
-      html += `<div class="vrow" style="--c:${DROIDS[t].css}"><b>${DROIDS[t].name}</b><div class="chips">`;
-      html += `<button class="pick ${wear ? '' : 'on'}" data-a="wear" data-t="${t}" data-o="">Sans tenue</button>`;
-      for (const [o, def] of Object.entries(OUTFITS)) {
-        const owned = st.wardrobe.owned[t + ':' + o];
-        if (owned) html += `<button class="pick ${wear === o ? 'on' : ''}" data-a="wear" data-t="${t}" data-o="${o}">${def.name}</button>`;
-        else html += `<button class="pick buy" data-a="buy" data-t="${t}" data-o="${o}" ${st.credits >= def.price ? '' : 'disabled'}>${def.name} · ${def.price}</button>`;
+    html += `<p class="muted">Les crédits se gagnent avec les objectifs, les niveaux, les commandes et en faisant tourner l’usine. Les tenues se cumulent : une par emplacement, aux couleurs du métier. Touche une tenue achetée pour la mettre ou l’enlever.</p><p class="credits-line">Crédits : <b>${st.credits}</b></p>`;
+    for (const t of SPEC_ORDER) {
+      const D = DROIDS[t];
+      if (D.lvl > st.level) { html += `<div class="vrow locked">${LOCK}<b>???</b><em>Niveau ${D.lvl + 1}</em></div>`; continue; }
+      const wear = st.wardrobe.wear[t] || {}, look = LOOKS[t];
+      html += `<div class="vrow" style="--c:${D.css}"><div class="vhead"><b>${D.name}</b><span class="muted">${look.style}</span></div>`;
+      const pp = packPrice(st, t);
+      const nMiss = PACK.items.filter((o) => !st.wardrobe.owned[t + ':' + o]).length;
+      if (st.level >= PACK.lvl && pp) html += `<button class="pick pack" data-a="pack" data-t="${t}" ${st.credits >= pp ? '' : 'disabled'}>${PACK.name} : ${nMiss === PACK.items.length ? 'les 5 vêtements' : nMiss > 1 ? `les ${nMiss} vêtements qui manquent` : 'le vêtement qui manque'} · ${pp} crédits</button>`;
+      else if (st.level < PACK.lvl) html += `<p class="muted small">${PACK.name} (tous les vêtements d’un coup) : à partir du niveau ${PACK.lvl + 1}</p>`;
+      for (const [sl, slName] of Object.entries(SLOTS)) {
+        html += `<div class="slot"><span class="slname">${slName}</span><div class="chips">`;
+        for (const [o, def] of Object.entries(OUTFITS)) {
+          if (def.slot !== sl) continue;
+          const sw = look[o] ? `<i class="sw" style="background:${look[o]}"></i>` : o === 'chrome' ? '<i class="sw" style="background:linear-gradient(135deg,#eef2f6,#9aa3ad)"></i>' : o === 'or' ? '<i class="sw" style="background:linear-gradient(135deg,#ffe28a,#c99a1e)"></i>' : '';
+          const owned = st.wardrobe.owned[t + ':' + o];
+          if (owned) html += `<button class="pick ${wear[sl] === o ? 'on' : ''}" data-a="wear" data-t="${t}" data-o="${o}">${sw}${def.name}</button>`;
+          else html += `<button class="pick buy" data-a="buy" data-t="${t}" data-o="${o}" ${st.credits >= def.price ? '' : 'disabled'}>${sw}${def.name} · ${def.price}</button>`;
+        }
+        html += '</div></div>';
       }
-      html += '</div></div>';
+      html += '</div>';
     }
   }
   const body = $('usine-body');
@@ -288,6 +343,7 @@ export function fillUsine(st, tab, send) {
   body.querySelectorAll('button[data-a]').forEach((b) => b.addEventListener('click', () => {
     if (b.disabled) return;
     if (b.dataset.a === 'buy') send({ c: 'buy', type: b.dataset.t, outfit: b.dataset.o });
+    else if (b.dataset.a === 'pack') send({ c: 'pack', type: b.dataset.t });
     else send({ c: 'wear', type: b.dataset.t, outfit: b.dataset.o || null });
   }));
 }
@@ -299,7 +355,7 @@ export function toast(text, tone = 'info') {
   el.className = 'toast ' + tone;
   el.textContent = text;
   box.prepend(el);
-  while (box.children.length > 3) box.lastChild.remove();
+  while (box.children.length > 2) box.lastChild.remove();
   setTimeout(() => el.classList.add('out'), 3400);
   setTimeout(() => el.remove(), 3900);
 }
@@ -328,6 +384,74 @@ export function updateArrow(renderer) {
   }
   el.classList.add('on');
   el.style.transform = `translate(${x}px, ${y}px) rotate(${ang}rad)`;
+}
+
+// « +2 » au-dessus de l'endroit où l'on gagne des crédits
+const floaters = [];
+export function floatCredit(x, z, n) {
+  const el = document.createElement('div');
+  el.className = 'cred';
+  el.textContent = `+${n}`;
+  $('labels').appendChild(el);
+  floaters.push({ el, x, z, t0: performance.now() });
+}
+export function updateFloaters(renderer) {
+  const now = performance.now();
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i], t = (now - f.t0) / 1400;
+    if (t >= 1) { f.el.remove(); floaters.splice(i, 1); continue; }
+    const p = renderer.project(f.x, height(f.x, f.z) + 3.2 + t * 1.6, f.z);
+    if (!p) { f.el.style.display = 'none'; continue; }
+    f.el.style.display = '';
+    f.el.style.opacity = String(1 - t * t);
+    f.el.style.transform = `translate3d(${Math.round(p.x)}px, ${Math.round(p.y)}px, 0) translate(-50%, -100%)`;
+  }
+}
+
+// Tout ce qu'un niveau débloque
+export function unlocksOf(n) {
+  const i = n - 1, out = [];
+  const plots = PLOTS.filter((p) => p.level === n);
+  const seen = new Set();
+  for (const p of plots) { const nm = MACHINES[p.type].name + (p.id.endsWith('2') ? ' n°2' : ''); if (!seen.has(nm)) { seen.add(nm); out.push(['Machine', nm]); } }
+  for (const [t, d] of Object.entries(DROIDS)) if (d.lvl === i) out.push(['Métier', d.name]);
+  for (const [rid, r] of Object.entries(RECIPES)) {
+    const byLvl = r.lvl === i && r.lvl > 0;
+    const byMachine = r.lvl <= i && (r.need || []).some((t) => PLOTS.some((p) => p.type === t && p.level === n) && (r.need || []).every((u) => PLOTS.some((p) => p.type === u && p.level <= n)));
+    if ((byLvl || byMachine) && !Object.keys(r.out)[0]?.startsWith('k_')) out.push(['Recette', r.name]);
+    else if (byLvl) out.push(['Kit', r.name]);
+  }
+  for (const [k, l] of Object.entries(RAW_LEVEL)) if (l === i && i > 0) out.push(['Matière utile', ITEMS[k].name]);
+  if (i === PACK.lvl) out.push(['Vestiaire', `${PACK.name} : tous les vêtements d’un métier d’un coup`]);
+  if (i === T.heavyFrom) out.push(['Attention', 'pannes lourdes à réparer à deux']);
+  return out;
+}
+export function fillLevelUp(n) {
+  const L = LEVELS[n - 1];
+  $('lvl-title').textContent = `Niveau ${n} · ${L.name}`;
+  $('lvl-sub').textContent = L.rodage ? 'Niveau de rodage : profitez de votre usine pour atteindre ces objectifs.' : 'Nouveautés débloquées :';
+  const u = unlocksOf(n);
+  $('lvl-body').innerHTML = (u.length ? `<ul class="unl">${u.map(([k, v]) => `<li><span class="ut">${k}</span>${esc(v)}</li>`).join('')}</ul>` : '')
+    + `<h4>Objectifs</h4><ul class="unl goals">${L.goals.map((g) => `<li>${esc(g.text)}</li>`).join('')}</ul>`;
+}
+
+// Appel du partenaire : bord de l'écran qui clignote, grand message, vibration
+export function callAlert(text, them) {
+  const fl = $('call-flash');
+  fl.style.setProperty('--cc', PLAYER_COLORS[them].css);
+  fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
+  const msg = $('call-msg');
+  msg.textContent = text;
+  msg.classList.remove('on'); void msg.offsetWidth; msg.classList.add('on');
+  try { if (navigator.vibrate) navigator.vibrate([200, 80, 200, 80, 300]); } catch (e) { /* ignoré */ }
+  // iPhone (Safari) : pas de vibration pour les sites ; un interrupteur caché déclenche un petit retour haptique sur les modèles récents
+  try { const lb = $('haptic-label'); for (let k = 0; k < 3; k++) setTimeout(() => lb.click(), k * 140); } catch (e) { /* ignoré */ }
+}
+
+// Écran de surchauffe
+export function fillLock(leftMs) {
+  const s = Math.max(0, Math.ceil(leftMs / 1000));
+  $('lock-count').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
 // ---------- commandes : joystick, bouton, caméra ----------
@@ -451,18 +575,29 @@ const pill = (l, r) => `<div class="pill"><i class="${l || ''}"></i><i class="${
 const sub = (html) => `<div class="wsub">${html}</div>`;
 
 // Où se trouve l'objectif en cours (pour le repère toujours visible)
+const ITEM_PLOT = { circuit: 'circuits', isolant: 'ceramique', fil: 'trefileuse', tole: 'laminoir', circuitA: 'circuits' };
 export function objectiveSpot(st) {
   if (st.won) return null;
   const g = LEVELS[st.level].goals.find((x) => !st.goals[x.id]);
   if (!g) return null;
+  const at = (id) => (st.machines[id] || PLOT_BY_ID[id] ? { x: PLOT_BY_ID[id].x, z: PLOT_BY_ID[id].z } : null);
   if (g.id === 'core' && !st.core.placed) return { x: st.core.x, z: st.core.z };
-  const plot = PLOT_BY_ID[g.id];
-  if (plot) return { x: plot.x, z: plot.z };
-  if (/^(maintenance|logistique|recherche|ingenieur|chefmaint|expert|qualiteD|production|process|achat|adjoint|chef)$/.test(g.id) && st.machines.atelier) return { x: PLOT_BY_ID.atelier.x, z: PLOT_BY_ID.atelier.z };
-  if (/^orders/.test(g.id) && st.machines.quai) return { x: PLOT_BY_ID.quai.x, z: PLOT_BY_ID.quai.z };
-  if (g.id === 'heavy') { const m = Object.values(st.machines).find((x) => x.broken === 'heavy'); if (m) return { x: PLOT_BY_ID[m.id].x, z: PLOT_BY_ID[m.id].z }; }
+  if (PLOT_BY_ID[g.id]) return at(g.id);
+  if ((DROIDS[g.id] || g.id === 'qualiteD') && st.machines.atelier) return at('atelier');
+  if (g.id === 'fuel') return at('generateur');
+  if (g.id === 'heavy') { const m = Object.values(st.machines).find((x) => x.broken === 'heavy'); return m ? at(m.id) : null; }
+  if (!g.c) return null;
+  const [kind, , item] = g.c;
+  if (kind === 'made+' || kind === 'droids') return at('assembleur');
+  if (kind === 'item+') return at(ITEM_PLOT[item]);
+  if (kind === 'ctrl+') return at('qualite');
+  if (kind === 'recyc+') return at('recycleur');
+  if (kind === 'orders+') return at('quai');
   return null;
 }
+
+// Bulles « à récupérer » au-dessus des machines (visibles de loin)
+const BUBBLE_RANGE = 25;
 
 export function worldLabels(st, myId, me) {
   const L = [];
@@ -510,18 +645,35 @@ export function worldLabels(st, myId, me) {
       const fixer = ['A', 'B'].find((id) => st.work[id] && st.work[id].kind === 'fixheavy' && st.work[id].mach === p.id);
       html += pill(m.cut || '', fixer || '') + gauge(m.fixT / T.heavyRepair, 'duo') + sub('Panne lourde : couper à gauche, réparer à droite');
     } else if (m.broken) html += sub('Panne : garder appuyé pour réparer');
-    else if (m.type === 'generateur') html += sub(`${itemIcon('charbon')}${m.inp.charbon || 0} ${itemIcon('bois')}${m.inp.bois || 0}` + (m.run ? ' · en marche' : ''));
+    else if (m.type === 'generateur') {
+      const hot = st.gen.lockUntil > Date.now();
+      html += sub(hot ? '<b class="bad">Surchauffe : il refroidit</b>' : `${itemIcon('charbon')}${m.inp.charbon || 0} ${itemIcon('bois')}${m.inp.bois || 0} · ${genFill(st, m)}/${T.genCap}` + (m.run ? ' · en marche' : ''));
+      if (!hot) html += sub(`surchauffe dans ${Math.max(0, Math.ceil((T.overheatAt - st.gen.play) / 60))} min`);
+    }
+    else if (m.type === 'zone') html += sub(listItems(m.inp) || 'Vide : déposez ici les pièces déclassées');
     else if (m.type === 'quai') { const o = activeOrders(st); html += sub(o.length ? o.map((x) => `${itemIcon('colis')}${x.left} · ${clock(x.t)}`).join(' &nbsp; ') : 'Pas de commande'); }
     else if (m.type === 'atelier') html += sub(m.busy ? 'Formation en cours…' : 'Amène un droïde standard');
     else if (!m.sel.length) html += sub('Aucune recette : bouton Recettes');
     else {
       const r = RECIPES[m.sel.includes(m.cur) ? m.cur : m.sel[0]];
-      const inp = Object.keys(r.in).map((k) => `<span class="it ${(m.inp[k] || 0) >= r.in[k] ? '' : 'miss'}">${itemIcon(k)}${m.inp[k] || 0}</span>`).join('');
+      const inp = r.any ? (listItems(Object.fromEntries(Object.entries(m.inp).filter(([k]) => ITEMS[k].kind === r.any))) || `<span class="it miss">${r.any === 'decl' ? 'aucune pièce déclassée' : 'aucun rebut'}</span>`)
+        : Object.keys(r.in).map((k) => `<span class="it ${(m.inp[k] || 0) >= r.in[k] ? '' : 'miss'}">${itemIcon(k)}${m.inp[k] || 0}</span>`).join('');
       const outs = listItems(m.out);
       html += sub(`${r.name}${m.sel.length > 1 ? ` <small>(+${m.sel.length - 1})</small>` : ''}`) + sub(inp + (outs ? ' → ' + outs : '') + (m.operator ? ' · droïde' : '') + (m.nopower ? ' · <b class="bad">sans courant</b>' : ''));
       if (m.run || m.t > 0) html += gauge(m.t / r.time);
     }
     add('p' + p.id, p.x, ['assembleur', 'quai'].includes(p.type) ? 3.5 : 2.8, p.z, html);
+  }
+
+  for (const m of Object.values(st.machines)) {
+    const n = count(m.out);
+    if (!n) continue;
+    const p = PLOT_BY_ID[m.id];
+    const d = Math.hypot(p.x - me.x, p.z - me.z);
+    if (d > BUBBLE_RANGE) continue;
+    const keys = ITEM_ORDER.filter((k) => (m.out[k] || 0) > 0).slice(0, 3);
+    const y = ['assembleur', 'quai'].includes(p.type) ? 3.5 : 2.8;
+    add('o' + m.id, p.x, y + (d < LABEL_RANGE + 1.5 ? 1.9 : 0.4), p.z, `<div class="outb">${keys.map((k) => `<span class="it">${itemIcon(k)}${m.out[k]}</span>`).join('')}</div>`);
   }
 
   if (!st.core.placed && within(st.core.x, st.core.z, 2)) {
@@ -537,7 +689,8 @@ export function worldLabels(st, myId, me) {
 
   for (const d of st.droids) {
     // Étiquettes des droïdes : seulement tout près, pour ne pas surcharger l'usine
-    if (Math.hypot(d.x - me.x, d.z - me.z) > 4.5 || d.st === 'spec') continue;
+    const dd = Math.hypot(d.x - me.x, d.z - me.z);
+    if (d.st === 'spec' || dd > (d.st === 'idle' || d.st === 'follow' ? 4.5 : 2.6)) continue;
     const def = DROIDS[d.type];
     const what = d.st === 'idle' ? ' · libre' : d.st === 'follow' ? ' · te suit' : '';
     add('d' + d.id, d.x, height(d.x, d.z) + 1.55, d.z, `<div class="dtag" style="--c:${def.css}">${def.name}${what}</div>`);

@@ -1,8 +1,8 @@
 // Simulation de référence (téléphone hôte, ou le seul téléphone en solo).
 import {
   REACH, POST_R, SAC_MAX, CARRY_SPEED, OUT_MAX, T, SCREWS, ITEMS, NODE_TYPES, MACHINES, PLOTS, ENTREPOT,
-  START, CORE, DROIDS, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_MAP, RAW, RAW_LEVEL, OUTFITS, CREDITS,
-  SLAB, WORLD, isRaw, other,
+  START, CORE, DROIDS, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_BASES, RAW, RAW_LEVEL, OUTFITS, PACK, CREDITS,
+  SLAB, WORLD, isRaw, isDecl, isRebut, other,
 } from './config.js';
 import { NODES, ANIMAL_HOMES, PLOT_BY_ID, plotBox, genWorld, slabDist, GATES } from './world.js';
 import { boxDist, obstacles, moveBox, steer } from './move.js';
@@ -16,7 +16,7 @@ export const fmt = (o) => Object.entries(o).filter(([, n]) => n > 0).map(([k, n]
 export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0) {
   genWorld(seed);
   const S = {
-    v: 3, seed, mode, time: 0, level: 0, goals: {}, won: false,
+    v: 4, seed, mode, time: 0, level: 0, goals: {}, won: false,
     players: { A: newPlayer(START.A), B: newPlayer(START.B) },
     nodes: NODES.map((n) => NODE_TYPES[n.type].qty),
     nodeT: NODES.map(() => 0),
@@ -25,17 +25,27 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
     droids: [], animals: [],
     work: { A: null, B: null },
     seq: 1, made: 0, animalT: 0,
-    stats: { made: {}, controlled: 0, recycled: 0, orders: 0, heavyFixed: 0, burned: 0 },
+    stats: { made: {}, controlled: 0, recycled: 0, orders: 0, heavyFixed: 0, burned: 0, repairs: 0, earned: 0 },
+    lv0: null,
     power: { battery: 0, energy: 0, out: false, warned: false },
+    gen: { play: 0, lockUntil: 0 },
+    qcRun: 0, clock: 0,
     orders: [], orderT: 15,
     credits: 0, wardrobe: { owned: {}, wear: {} },
     request: null, forceHeavyAt: null, adjT: 0, chefT: 0,
     fx: [], cd: { A: 0, B: 0 },
   };
   for (const p of PLOTS) S.plots[p.id] = { del: {}, ready: false, prog: 0, holder: null, built: false };
+  S.lv0 = snapshot(S);
   ANIMAL_HOMES.slice(0, ANIMAL_COUNT).forEach((h, i) => spawnAnimal(S, h, Object.keys(ANIMALS)[i % 3]));
   return S;
 }
+
+// Compteurs au début du niveau : les objectifs de rodage comptent ce qui se passe pendant le niveau
+function snapshot(S) {
+  return { made: S.made, earned: S.stats.earned, repairs: S.stats.repairs, ctrl: S.stats.controlled, recyc: S.stats.recycled, orders: S.stats.orders, items: { ...S.stats.made } };
+}
+const nowMs = (S) => S.clock || Date.now();
 
 function newPlayer(p) { return { x: p.x, z: p.z, rot: Math.PI, sac: {}, locked: false, hint: null, wait: null }; }
 
@@ -57,6 +67,9 @@ export function restoreState(S) {
     d.task = null; d.carry = null; d.repairing = false;
   }
   for (const a of S.animals) if (a.st === 'caught') { a.st = 'wander'; a.by = null; }
+  S.gen = S.gen || { play: 0, lockUntil: 0 };
+  S.qcRun = S.qcRun || 0;
+  if (!S.lv0) S.lv0 = snapshot(S);
   return S;
 }
 
@@ -91,44 +104,71 @@ function pay(S, p, cost) {
   }
 }
 export const hasType = (S, type) => Object.values(S.machines).some((m) => m.type === type);
-export const qcOn = (S) => hasType(S, 'qualite');
-export const needPower = (S) => S.level >= 3;
+// Le contrôle qualité démarre quand le poste et la zone des déclassés existent
+export const qcActive = (S) => hasType(S, 'qualite') && hasType(S, 'zone');
+export const needPower = (S) => S.level >= 4;
+export const genUnits = (m) => (m.inp.charbon || 0) + (m.inp.bois || 0);
+// Unités dans le générateur, en comptant celle qui brûle : 5 au maximum (1 heure)
+export const genFill = (S, m) => genUnits(m) + (S.power.energy > 0 ? 1 : 0);
 export function powerIssue(S) {
   if (!needPower(S)) return null;
-  const gen = Object.values(S.machines).find((m) => m.type === 'generateur');
+  const gen = S.machines.generateur;
   if (gen) {
+    if (S.gen.lockUntil > nowMs(S)) return 'générateur en surchauffe';
     if (gen.broken) return 'générateur en panne';
-    return S.power.energy > 0.05 || (gen.inp.charbon || 0) + (gen.inp.bois || 0) > 0 ? null : 'générateur vide (charbon ou bois)';
+    return S.power.energy > 0.05 || genUnits(gen) > 0 ? null : 'générateur vide (charbon ou bois)';
   }
   return S.power.battery > 0 ? null : 'construisez le générateur';
 }
 export function recipeAvail(S, rid) {
   const r = RECIPES[rid];
   if (!r || r.lvl > S.level) return false;
-  if (r.need && !hasType(S, r.need)) return false;
-  if (r.until && hasType(S, r.until)) return false;
+  if (r.need && !r.need.every((t) => hasType(S, t))) return false;
   return true;
+}
+// Prix du pack « L'intégrale » pour un métier (les vêtements déjà achetés ne sont pas refacturés)
+export function packPrice(S, type) {
+  const miss = PACK.items.filter((o) => !S.wardrobe.owned[type + ':' + o]);
+  if (!miss.length) return 0;
+  const full = PACK.items.reduce((a, o) => a + OUTFITS[o].price, 0);
+  const sub = miss.reduce((a, o) => a + OUTFITS[o].price, 0);
+  return Math.round(PACK.price * sub / full);
 }
 export function machineRecipes(S, m) { return MACHINES[m.type].recipes.filter((rid) => recipeAvail(S, rid)); }
 export const isProd = (m) => MACHINES[m.type].recipes.length > 0;
-function outName(S, rid, item) { return !RECIPES[rid].qc && QC_MAP[item] && qcOn(S) ? QC_MAP[item] : item; }
+// Recette « n'importe quelle pièce » (contrôle, recyclage) : la première pièce de la bonne sorte présente
+function anyItem(S, m, kind) {
+  for (const [k, n] of Object.entries(m.inp)) {
+    if (n <= 0 || ITEMS[k].kind !== kind) continue;
+    const b = ITEMS[k].base;
+    const outs = kind === 'decl' ? [b, b + '_r'] : Object.keys(QC_BASES[b].back);
+    if (outs.every((o) => (m.out[o] || 0) < OUT_MAX)) return k;
+  }
+  return null;
+}
 
 export function needOf(S, m) {
   const out = {};
   if (MACHINES[m.type].fuel) {
-    out.charbon = Math.max(0, 6 - (m.inp.charbon || 0));
-    out.bois = Math.max(0, 4 - (m.inp.bois || 0));
+    const free = Math.max(0, T.genCap - genFill(S, m));
+    out.charbon = free; out.bois = free;
     return out;
   }
+  if (MACHINES[m.type].store) return out;
   const target = {};
-  for (const rid of m.sel) for (const [k, n] of Object.entries(RECIPES[rid].in)) target[k] = (target[k] || 0) + n * 2;
+  for (const rid of m.sel) {
+    const r = RECIPES[rid];
+    if (r.any) { for (const k of Object.keys(ITEMS)) if (ITEMS[k].kind === r.any) target[k] = 4; continue; }
+    for (const [k, n] of Object.entries(r.in)) target[k] = (target[k] || 0) + n * 2;
+  }
   for (const [k, n] of Object.entries(target)) out[k] = Math.max(0, n - (m.inp[k] || 0));
   return out;
 }
 function canMake(S, m, rid) {
   const r = RECIPES[rid];
+  if (r.any) return !!anyItem(S, m, r.any);
   if (!Object.entries(r.in).every(([k, n]) => (m.inp[k] || 0) >= n)) return false;
-  for (const k of Object.keys(r.out)) if (k !== 'droide' && (m.out[outName(S, rid, k)] || 0) >= OUT_MAX) return false;
+  for (const k of Object.keys(r.out)) if (k !== 'droide' && (m.out[k] || 0) >= OUT_MAX) return false;
   return true;
 }
 function pickRecipe(S, m) {
@@ -144,7 +184,7 @@ function pickRecipe(S, m) {
 }
 export function missingIn(S, m) {
   const rid = m.sel.includes(m.cur) ? m.cur : m.sel[0];
-  if (!rid) return {};
+  if (!rid || RECIPES[rid].any) return {};
   const out = {};
   for (const [k, n] of Object.entries(RECIPES[rid].in)) out[k] = Math.max(0, n - (m.inp[k] || 0));
   return out;
@@ -167,7 +207,11 @@ function followers(S, id) { return S.droids.filter((d) => d.st === 'follow' && d
 function operatorOf(S, m) { return S.droids.find((d) => d.st === 'work' && (d.job === m.id || d.job2 === m.id)); }
 function returnInputs(S, m) {
   const keep = {};
-  for (const rid of m.sel) for (const k of Object.keys(RECIPES[rid].in)) keep[k] = true;
+  for (const rid of m.sel) {
+    const r = RECIPES[rid];
+    if (r.any) { for (const k of Object.keys(m.inp)) if (ITEMS[k].kind === r.any) keep[k] = true; }
+    for (const k of Object.keys(r.in)) keep[k] = true;
+  }
   const back = {};
   for (const [k, n] of Object.entries(m.inp)) if (!keep[k] && n > 0) { back[k] = n; addStock(S, k, n); delete m.inp[k]; }
   return back;
@@ -198,8 +242,9 @@ export function targets(S, id) {
   {
     const d = boxDist(p, ENTREPOT);
     if (d <= REACH) {
+      const dep = depositable(p);
       if (folHQ) add('entrepot', d, { act: 'assignHQ', label: `Mettre au travail : ${DROIDS[folHQ.type].name.toLowerCase()}` });
-      else if (sacCount(p) > 0) add('entrepot', d, { act: 'deposit', label: `Tout déposer (${sacCount(p)})` });
+      else if (dep > 0) add('entrepot', d, { act: 'deposit', label: `Tout déposer (${dep})` });
       else add('entrepot', d, { act: 'menu', menu: 'entrepot', label: 'Ouvrir l’entrepôt' });
     }
   }
@@ -237,6 +282,12 @@ export function targets(S, id) {
     if (!near) continue;
     if (m.broken) { add(pl.id, d, { act: 'repair', label: 'Réparer la panne (garder appuyé)' }); continue; }
     if (myAnimal && isProd(m) && m.animals.length < T.animalMax) { add(pl.id, d, { act: 'install', label: `Installer ${ANIMALS[myAnimal.sp].name} (+25 %)` }); continue; }
+    if (def.store) {
+      const nd = declCount(p);
+      if (nd > 0) add(pl.id, d, { act: 'zoneput', label: `Déposer les déclassés (${nd})` });
+      else add(pl.id, d, { act: 'menu', menu: 'zone', label: 'Ouvrir la zone des déclassés' });
+      continue;
+    }
     if (m.type === 'atelier') {
       const ouv = fol.find((x) => x.type === 'ouvrier');
       if (ouv && !m.busy) add(pl.id, d, { act: 'menu', menu: 'spec', label: 'Spécialiser le droïde' });
@@ -252,15 +303,15 @@ export function targets(S, id) {
       continue;
     }
     if (def.fuel) {
-      const need = needOf(S, m);
-      if (['charbon', 'bois'].some((k) => need[k] > 0 && (p.sac[k] || 0) > 0)) add(pl.id, d, { act: 'load', label: 'Remplir le générateur' });
-      else add(pl.id, d, { off: true, label: `Générateur : ${m.inp.charbon || 0} charbon, ${m.inp.bois || 0} bois` });
+      const free = T.genCap - genFill(S, m);
+      if (free > 0 && ['charbon', 'bois'].some((k) => (p.sac[k] || 0) > 0)) add(pl.id, d, { act: 'load', label: `Charger le générateur (${genFill(S, m)}/${T.genCap})` });
+      else add(pl.id, d, { off: true, label: `Générateur : ${genFill(S, m)}/${T.genCap} unités${free > 0 ? ' · apporte du charbon ou du bois' : ''}` });
       continue;
     }
     if (S.work[id] && S.work[id].kind === 'operate' && S.work[id].key === pl.id) {
       const rr = pickRecipe(S, m);
       const pw = powerIssue(S);
-      add(pl.id, d, { act: 'operate', label: pw ? 'Pas de courant : ' + pw : rr ? `En marche : ${RECIPES[rr].name.toLowerCase()}` : sum(missingIn(S, m)) ? 'En pause : il manque ' + fmt(missingIn(S, m)) : 'En pause : sortie pleine' });
+      add(pl.id, d, { act: 'operate', label: pw ? 'Pas de courant : ' + pw : rr ? `En marche : ${RECIPES[rr].name.toLowerCase()}` : 'En pause : ' + waitWhy(S, m) });
       continue;
     }
     const worker = fol.find((x) => DROIDS[x.type].work === 'machine' && (!DROIDS[x.type].only || DROIDS[x.type].only === m.type));
@@ -270,8 +321,8 @@ export function targets(S, id) {
     if (Object.entries(need).some(([k, n]) => n > 0 && (p.sac[k] || 0) > 0)) { add(pl.id, d, { act: 'load', label: 'Charger la machine' }); continue; }
     if (!m.sel.length) { add(pl.id, d, { off: true, label: 'Choisis une recette (bouton Recettes)' }); continue; }
     const rid = pickRecipe(S, m);
-    if (m.operator) add(pl.id, d, { off: true, label: rid ? 'Le droïde fait tourner la machine' : 'En attente : ' + fmt(missingIn(S, m)) });
-    else if (!rid) add(pl.id, d, { off: true, label: sum(missingIn(S, m)) ? 'Il manque : ' + fmt(missingIn(S, m)) : 'Sortie pleine : récupère la production' });
+    if (m.operator) add(pl.id, d, { off: true, label: rid ? 'Le droïde fait tourner la machine' : 'En attente : ' + waitWhy(S, m) });
+    else if (!rid) add(pl.id, d, { off: true, label: waitWhy(S, m) });
     else if (powerIssue(S)) add(pl.id, d, { off: true, label: 'Pas de courant : ' + powerIssue(S) });
     else add(pl.id, d, { act: 'operate', label: `Actionner : ${RECIPES[rid].name.toLowerCase()}` });
   }
@@ -306,6 +357,26 @@ export function targets(S, id) {
   return out;
 }
 
+// Pourquoi une machine ne peut pas produire
+export function waitWhy(S, m) {
+  const r = RECIPES[m.sel.includes(m.cur) ? m.cur : m.sel[0]];
+  if (!r) return 'aucune recette choisie';
+  if (r.any) {
+    const has = Object.entries(m.inp).some(([k, n]) => n > 0 && ITEMS[k].kind === r.any);
+    if (!has) return r.any === 'decl' ? 'rien à contrôler : apporte des pièces déclassées' : 'rien à recycler : apporte des rebuts';
+    return 'sortie pleine : récupère la production';
+  }
+  const miss = missingIn(S, m);
+  return sum(miss) ? 'il manque ' + fmt(miss) : 'sortie pleine : récupère la production';
+}
+const declCount = (p) => Object.entries(p.sac).reduce((a, [k, n]) => a + (isDecl(k) ? n : 0), 0);
+const depositable = (p) => sacCount(p) - declCount(p);
+// Crédits gagnés (avec un « +n » au-dessus de l'endroit)
+function earn(S, n, at) {
+  S.credits += n; S.stats.earned += n;
+  if (at) fx(S, 'all', 'cred', { n, x: at.x, z: at.z });
+}
+
 // ---------- appui sur Action ----------
 function press(S, id) {
   const p = S.players[id];
@@ -323,11 +394,17 @@ function press(S, id) {
     case 'fixheavy': S.work[id] = { kind: 'fixheavy', key: t.key, mach: t.mach }; break;
     case 'menu': fx(S, id, 'menu', { menu: t.menu }); break;
     case 'deposit': {
-      const n = sacCount(p);
-      for (const [k, v] of Object.entries(p.sac)) if (v > 0) addStock(S, k, v);
-      p.sac = {};
+      const n = depositable(p);
+      for (const [k, v] of Object.entries(p.sac)) if (v > 0 && !isDecl(k)) { addStock(S, k, v); delete p.sac[k]; }
       sfx(S, id, 'drop');
       toast(S, id, `${n} déposé${n > 1 ? 's' : ''} à l’entrepôt`, 'good');
+      if (declCount(p)) toast(S, id, 'Les pièces déclassées vont à la zone des déclassés.', 'warn');
+      break;
+    }
+    case 'zoneput': {
+      const z = S.machines[t.key];
+      for (const [k, v] of Object.entries(p.sac)) if (isDecl(k)) { z.inp[k] = (z.inp[k] || 0) + v; delete p.sac[k]; }
+      sfx(S, id, 'drop');
       break;
     }
     case 'deliver': {
@@ -372,6 +449,14 @@ function press(S, id) {
     }
     case 'load': {
       const m = S.machines[t.key];
+      if (MACHINES[m.type].fuel) {
+        for (const k of ['charbon', 'bois']) {
+          const q = Math.min(T.genCap - genFill(S, m), p.sac[k] || 0);
+          if (q > 0) { addSac(p, k, -q); m.inp[k] = (m.inp[k] || 0) + q; }
+        }
+        sfx(S, id, 'drop');
+        break;
+      }
       for (const [k, n] of Object.entries(needOf(S, m))) {
         const q = Math.min(n, p.sac[k] || 0);
         if (q > 0) { addSac(p, k, -q); m.inp[k] = (m.inp[k] || 0) + q; }
@@ -398,6 +483,7 @@ function press(S, id) {
       const a = S.animals.find((x) => x.st === 'caught' && x.by === id);
       a.st = 'installed'; a.mach = t.key; a.slot = m.animals.length; a.by = null;
       m.animals.push(a.sp);
+      earn(S, CREDITS.creature, PLOT_BY_ID[m.id]);
       sfx(S, 'all', 'ok');
       toast(S, 'all', `${ANIMALS[a.sp].name} installé : cadence ${Math.round(cadence(m, S) * 100)} %`, 'good');
       S.animalT = T.bumpBack;
@@ -446,7 +532,7 @@ function shipColis(S, p, d) {
     const q = Math.min(n, o.left);
     o.left -= q; n -= q; shipped += q;
     if (o.left === 0) {
-      S.credits += o.reward; S.stats.orders += 1;
+      earn(S, o.reward, PLOT_BY_ID.quai); S.stats.orders += 1;
       sfx(S, 'all', 'won');
       toast(S, 'all', `Commande livrée : +${o.reward} crédits`, 'good');
     }
@@ -489,8 +575,8 @@ function build(S, plotId) {
   if (first) m.sel = [first];
   sfx(S, 'all', 'won');
   toast(S, 'all', `${MACHINES[pl.type].name} construite !`, 'good');
-  if (pl.type === 'qualite') toast(S, 'all', 'Norme qualité : carcasses et circuits sortent désormais « à contrôler ».', 'warn');
-  if (pl.type === 'laminoir') toast(S, 'all', 'Nouvelle méthode : les carcasses se font maintenant avec des tôles.', 'info');
+  if ((pl.type === 'qualite' || pl.type === 'zone') && qcActive(S)) toast(S, 'all', 'Contrôle qualité en place : 1 pièce sur 5 sortira déclassée. Rangez-les dans la zone des déclassés, puis contrôlez-les.', 'warn');
+  if (pl.type === 'generateur') { S.gen.play = 0; toast(S, 'all', 'Générateur : 1 charbon ou 1 bois toutes les 12 minutes. Attention, il surchauffe après 1 heure de jeu.', 'info'); }
   if (pl.type === 'quai') S.orderT = 10;
 }
 export function forceBuild(S, plotId) { const st = S.plots[plotId]; st.del = { ...MACHINES[PLOT_BY_ID[plotId].type].cost }; st.ready = true; build(S, plotId); }
@@ -510,11 +596,26 @@ function command(S, id, e) {
     }
     case 'put': {
       if (!nearHQ || !ITEMS[e.item]) return;
+      if (isDecl(e.item)) { toast(S, id, 'Les pièces déclassées vont à la zone des déclassés.', 'warn'); return; }
       const q = Math.max(0, Math.min(e.n | 0, p.sac[e.item] || 0));
       if (q) { addSac(p, e.item, -q); addStock(S, e.item, q); sfx(S, id, 'drop'); }
       break;
     }
-    case 'putall': if (nearHQ) { for (const [k, v] of Object.entries(p.sac)) addStock(S, k, v); p.sac = {}; sfx(S, id, 'drop'); } break;
+    case 'putall': if (nearHQ) { for (const [k, v] of Object.entries(p.sac)) if (!isDecl(k)) { addStock(S, k, v); delete p.sac[k]; } sfx(S, id, 'drop'); } break;
+    case 'ztake': case 'zput': case 'zputall': {
+      const z = S.machines.zone;
+      if (!z || boxDist(p, plotBox(PLOT_BY_ID.zone)) > REACH + 1.5) return;
+      if (e.c === 'zputall') { for (const [k, v] of Object.entries(p.sac)) if (isDecl(k)) { z.inp[k] = (z.inp[k] || 0) + v; delete p.sac[k]; } sfx(S, id, 'drop'); return; }
+      if (!isDecl(e.item)) return;
+      if (e.c === 'ztake') {
+        const q = Math.max(0, Math.min(e.n | 0, z.inp[e.item] || 0, SAC_MAX - sacCount(p)));
+        if (q) { z.inp[e.item] -= q; if (!z.inp[e.item]) delete z.inp[e.item]; addSac(p, e.item, q); sfx(S, id, 'pick'); }
+      } else {
+        const q = Math.max(0, Math.min(e.n | 0, p.sac[e.item] || 0));
+        if (q) { addSac(p, e.item, -q); z.inp[e.item] = (z.inp[e.item] || 0) + q; sfx(S, id, 'drop'); }
+      }
+      break;
+    }
     case 'request':
       if (e.item === null) { S.request = null; toast(S, 'all', 'Agent de recherche : il choisit tout seul ce qui manque.', 'info'); }
       else if (RAW.includes(e.item)) { S.request = { item: e.item, left: 10 }; toast(S, 'all', `Agent de recherche : 10 ${lc(e.item)} demandés.`, 'info'); }
@@ -533,18 +634,37 @@ function command(S, id, e) {
     }
     case 'buy': {
       const o = OUTFITS[e.outfit], key = e.type + ':' + e.outfit;
-      if (!o || !DROIDS[e.type] || e.type === 'ouvrier' || S.wardrobe.owned[key]) return;
+      if (!o || !DROIDS[e.type] || e.type === 'ouvrier' || DROIDS[e.type].lvl > S.level || S.wardrobe.owned[key]) return;
       if (S.credits < o.price) { toast(S, id, 'Pas assez de crédits', 'warn'); return; }
-      S.credits -= o.price; S.wardrobe.owned[key] = true; S.wardrobe.wear[e.type] = e.outfit;
+      S.credits -= o.price; S.wardrobe.owned[key] = true;
+      (S.wardrobe.wear[e.type] = S.wardrobe.wear[e.type] || {})[o.slot] = e.outfit;
       sfx(S, 'all', 'ok');
-      toast(S, 'all', `${o.name} pour les ${DROIDS[e.type].name.toLowerCase()}s !`, 'good');
+      toast(S, 'all', `${o.name} : ${DROIDS[e.type].name.toLowerCase()} !`, 'good');
       break;
     }
-    case 'wear':
-      if (!DROIDS[e.type]) return;
-      if (e.outfit === null) delete S.wardrobe.wear[e.type];
-      else if (S.wardrobe.owned[e.type + ':' + e.outfit]) S.wardrobe.wear[e.type] = e.outfit;
+    case 'pack': {
+      if (!DROIDS[e.type] || e.type === 'ouvrier' || S.level < PACK.lvl || DROIDS[e.type].lvl > S.level) return;
+      const price = packPrice(S, e.type);
+      if (!price) return;
+      if (S.credits < price) { toast(S, id, 'Pas assez de crédits', 'warn'); return; }
+      S.credits -= price;
+      for (const o of PACK.items) S.wardrobe.owned[e.type + ':' + o] = true;
+      const w = (S.wardrobe.wear[e.type] = S.wardrobe.wear[e.type] || {});
+      w.tete = w.tete || 'casque'; w.corps = w.corps || 'gilet'; w.cou = w.cou || 'noeud';
+      sfx(S, 'all', 'won');
+      toast(S, 'all', `${PACK.name} : ${DROIDS[e.type].name.toLowerCase()} entièrement habillé !`, 'good');
       break;
+    }
+    case 'wear': {
+      if (!DROIDS[e.type]) return;
+      const w = (S.wardrobe.wear[e.type] = S.wardrobe.wear[e.type] || {});
+      if (e.outfit === null && typeof e.slot === 'string') delete w[e.slot];
+      else if (OUTFITS[e.outfit] && S.wardrobe.owned[e.type + ':' + e.outfit]) {
+        const sl = OUTFITS[e.outfit].slot;
+        if (w[sl] === e.outfit) delete w[sl]; else w[sl] = e.outfit;
+      }
+      break;
+    }
   }
 }
 
@@ -564,6 +684,16 @@ function specialize(S, id, type) {
   dr.x = pl.x; dr.z = pl.z + 0.2;
   sfx(S, 'all', 'clong');
   toast(S, 'all', `Formation : ${def.name.toLowerCase()}…`, 'info');
+}
+
+// Pendant la surchauffe, seuls le vestiaire et l'organigramme restent accessibles
+const LOCKED_OK = new Set(['buy', 'pack', 'wear']);
+export function commandsOnly(S, inputs) {
+  for (const id of IDS) {
+    const inp = inputs[id];
+    if (!inp || !inp.events) continue;
+    for (const e of inp.events) if (e && typeof e === 'object' && LOCKED_OK.has(e.c)) command(S, id, e);
+  }
 }
 
 // ---------- boucle ----------
@@ -588,6 +718,7 @@ export function step(S, dt, inputs) {
   for (const id of IDS) holdWork(S, id, inputs[id] || {}, dt);
   carry(S, inputs, dt);
   recipesCheck(S);
+  generator(S, dt);
   machines(S, dt);
   pannes(S);
   droids(S, dt);
@@ -649,7 +780,10 @@ function holdWork(S, id, inp, dt) {
 }
 
 function fixMachine(S, m, msg) {
+  const heavy = m.broken === 'heavy';
   m.broken = null; m.fixT = 0; m.cut = null; m.wear = wearTime();
+  S.stats.repairs += 1;
+  earn(S, heavy ? CREDITS.heavy : CREDITS.repair, PLOT_BY_ID[m.id]);
   sfx(S, 'all', 'ok');
   toast(S, 'all', `${msg} : ${MACHINES[m.type].name.toLowerCase()}.`, 'good');
 }
@@ -711,6 +845,29 @@ function recipesCheck(S) {
   }
 }
 
+// Générateur : 1 unité toutes les 12 minutes de jeu, surchauffe après 1 heure (pause obligatoire de 30 minutes)
+function generator(S, dt) {
+  const gen = S.machines.generateur;
+  if (!gen) return;
+  gen.run = false;
+  const P = S.power;
+  if (P.energy <= 0 && genUnits(gen) > 0) {
+    const f = (gen.inp.charbon || 0) > 0 ? 'charbon' : 'bois';
+    gen.inp[f] -= 1; if (!gen.inp[f]) delete gen.inp[f];
+    P.energy += T.genUnit; S.stats.burned += 1;
+  }
+  if (P.energy > 0 && !gen.broken) { P.energy = Math.max(0, P.energy - dt); gen.run = true; }
+  S.gen.play += dt;
+  if (S.gen.play >= T.overheatAt) {
+    S.gen.play = 0;
+    S.gen.lockUntil = nowMs(S) + T.overheatLock * 1000;
+    gen.inp = {}; P.energy = 0;
+    sfx(S, 'all', 'err');
+    fx(S, 'all', 'overheat');
+    fx(S, 'all', 'save');
+  }
+}
+
 function machines(S, dt) {
   const want = [];
   for (const m of Object.values(S.machines)) {
@@ -722,31 +879,18 @@ function machines(S, dt) {
     if (!rid) continue;
     want.push([m, rid]);
   }
-  const gen = Object.values(S.machines).find((x) => x.type === 'generateur');
-  if (gen) gen.run = false;
+  const gen = S.machines.generateur;
   let powered = true;
   if (needPower(S) && want.length) {
-    const rate = 0.3 + 0.1 * want.length;
     const P = S.power;
-    if (gen) {
-      if (gen.broken) powered = false;
-      else {
-        if (P.energy < rate * dt) {
-          const f = (gen.inp.charbon || 0) > 0 ? 'charbon' : (gen.inp.bois || 0) > 0 ? 'bois' : null;
-          if (f) { gen.inp[f] -= 1; P.energy += T.fuel[f]; S.stats.burned += 1; }
-        }
-        if (P.energy >= rate * dt) {
-          P.energy -= rate * dt; gen.run = true;
-          if (S.time >= T.panneStart) gen.wear -= dt;
-          if (gen.wear <= 0) breakdown(S, gen);
-        } else powered = false;
-      }
-    } else if (P.battery > 0) P.battery = Math.max(0, P.battery - dt);
+    if (gen) powered = !gen.broken && P.energy > 0;
+    else if (P.battery > 0) P.battery = Math.max(0, P.battery - dt);
     else powered = false;
+    if (gen && gen.run && S.time >= T.panneStart) { gen.wear -= dt; if (gen.wear <= 0) breakdown(S, gen); }
     if (!powered && !P.out) {
       P.out = true;
       sfx(S, 'all', 'err');
-      toast(S, 'all', gen ? (gen.broken ? 'Générateur en panne : plus de courant !' : 'Générateur vide : ajoutez du charbon ou du bois !') : 'Batterie vide : construisez le générateur !', 'bad');
+      toast(S, 'all', gen ? (gen.broken ? 'Générateur en panne : plus de courant !' : 'Générateur vide : chargez-le en charbon ou en bois !') : 'Batterie vide : construisez le générateur !', 'bad');
     }
     if (powered) P.out = false;
   }
@@ -761,25 +905,48 @@ function machines(S, dt) {
     }
     if (m.t < r.time) continue;
     m.t = 0;
-    for (const [k, n] of Object.entries(r.in)) { m.inp[k] -= n; if (!m.inp[k]) delete m.inp[k]; }
-    for (const [k, n] of Object.entries(r.out)) {
-      if (k === 'droide') { spawnDroid(S, m); continue; }
-      let item = outName(S, rid, k);
-      if (r.qc) {
-        S.stats.controlled += n;
-        const rate = S.droids.some((d) => d.type === 'qualite' && d.st === 'work' && d.job === m.id) ? T.defect / 2 : T.defect;
-        if (Math.random() < rate) { item = 'rebut'; toast(S, 'all', 'Pièce défectueuse : un rebut à recycler.', 'warn'); }
+    if (r.any) produceAny(S, m, r);
+    else {
+      for (const [k, n] of Object.entries(r.in)) { m.inp[k] -= n; if (!m.inp[k]) delete m.inp[k]; }
+      for (const [k, n] of Object.entries(r.out)) {
+        if (k === 'droide') { spawnDroid(S, m); continue; }
+        // Une fois le contrôle qualité en place, 20 % des pièces sortent déclassées
+        let nd = 0;
+        if (QC_BASES[k] && qcActive(S) && !MACHINES[m.type].noDecl) for (let i = 0; i < n; i++) if (Math.random() < T.declRate) nd += 1;
+        if (n - nd > 0) m.out[k] = (m.out[k] || 0) + n - nd;
+        if (nd) { m.out[k + '_d'] = (m.out[k + '_d'] || 0) + nd; S.stats.made[k + '_d'] = (S.stats.made[k + '_d'] || 0) + nd; }
+        S.stats.made[k] = (S.stats.made[k] || 0) + n;
       }
-      if (rid === 'recyc') S.stats.recycled += 1;
-      m.out[item] = (m.out[item] || 0) + n;
-      S.stats.made[item] = (S.stats.made[item] || 0) + n;
     }
     sfx(S, 'all', 'ding');
-    m.done = m.sel.length > 1 ? m.done + 1 : 0;
-    if (m.sel.length > 1 && m.done >= 2) {
-      m.cur = m.sel[(m.sel.indexOf(m.cur) + 1) % m.sel.length];
-      m.done = 0;
+    // Plusieurs recettes cochées : 1 de chaque, à tour de rôle
+    if (m.sel.length > 1) { m.cur = m.sel[(m.sel.indexOf(m.cur) + 1) % m.sel.length]; m.done = 0; }
+  }
+}
+
+// Contrôle d'une pièce déclassée, ou recyclage d'un rebut
+function produceAny(S, m, r) {
+  const k = anyItem(S, m, r.any);
+  if (!k) return;
+  m.inp[k] -= 1; if (!m.inp[k]) delete m.inp[k];
+  const b = ITEMS[k].base;
+  if (r.any === 'decl') {
+    S.stats.controlled += 1;
+    earn(S, CREDITS.ctrl, PLOT_BY_ID[m.id]);
+    const resp = S.droids.some((d) => d.type === 'qualite' && d.st === 'work' && d.job === m.id);
+    const rebut = Math.random() < (resp ? T.rebutRateResp : T.rebutRate) || S.qcRun >= T.rebutMaxRun - 1;
+    if (rebut) {
+      S.qcRun = 0;
+      m.out[b + '_r'] = (m.out[b + '_r'] || 0) + 1;
+      S.stats.made[b + '_r'] = (S.stats.made[b + '_r'] || 0) + 1;
+      toast(S, 'all', `Contrôle : ${ITEMS[b].name.toLowerCase()} refusé${['carcasse', 'tole', 'silicium'].includes(b) ? 'e' : ''} → rebut à recycler.`, 'warn');
+    } else {
+      S.qcRun += 1;
+      m.out[b] = (m.out[b] || 0) + 1;
     }
+  } else {
+    S.stats.recycled += 1;
+    for (const [rk, rn] of Object.entries(QC_BASES[b].back)) m.out[rk] = (m.out[rk] || 0) + rn;
   }
 }
 
@@ -788,12 +955,13 @@ function spawnDroid(S, m) {
   const n = S.droids.filter((d) => d.st === 'idle').length;
   S.droids.push({ id: S.seq++, type: 'ouvrier', x: pl.x + MACHINES[m.type].w / 2 + 1.3, z: pl.z + 1.2 + (n % 3) * 0.9, rot: 0, st: 'idle', who: null, job: null, job2: null, task: null, carry: null });
   S.made += 1;
+  earn(S, CREDITS.droid, pl);
   sfx(S, 'all', 'won');
   toast(S, 'all', S.made === 1 ? 'Premier droïde produit ! Emmène-le sur une machine.' : 'Nouveau droïde produit.', 'good');
 }
 
 function breakdown(S, m, forceHeavy = false) {
-  const heavy = forceHeavy || (S.level >= T.heavyFrom && Math.random() < (S.level >= 6 ? 0.45 : 0.35));
+  const heavy = forceHeavy || (S.level >= T.heavyFrom && Math.random() < (S.level >= 12 ? 0.45 : 0.35));
   m.broken = heavy ? 'heavy' : 'light';
   m.fixT = 0; m.cut = null; m.run = false;
   sfx(S, 'all', 'err');
@@ -904,9 +1072,10 @@ function goTo(d, pt, dt, obs, speed = 3.9) {
   if (r > 0.35) { steer(d, pt.x, pt.z, speed, dt, obs, 0.35); d.moving = true; return false; }
   return true;
 }
+const hasAdjq = (S) => S.droids.some((x) => x.type === 'adjq' && x.st === 'work');
 function hqIndex(S, d) { return S.droids.filter((x) => x.job === 'hq').indexOf(d); }
 const busySigs = (S, d) => new Set(S.droids.filter((x) => x !== d && x.task && x.task.sig).map((x) => x.task.sig));
-const spotOf = (where) => (where === 'hq' ? HQ : where === 'quai' ? front(PLOT_BY_ID.quai) : front(PLOT_BY_ID[where]));
+const spotOf = (where) => (where === 'hq' ? HQ : front(PLOT_BY_ID[where]));
 
 // Porte des objets d'un point à un autre (tâche { from, to, item, phase, load })
 function haul(S, d, dt, obs, max) {
@@ -915,7 +1084,12 @@ function haul(S, d, dt, obs, max) {
     if (!goTo(d, spotOf(t.from), dt, obs)) return;
     let q;
     if (t.from === 'hq') { q = Math.min(max, S.stock[t.item] || 0, t.want || max); if (q > 0) addStock(S, t.item, -q); }
-    else { const m = S.machines[t.from]; q = Math.min(max, m.out[t.item] || 0, t.want || max); if (q > 0) { m.out[t.item] -= q; if (!m.out[t.item]) delete m.out[t.item]; } }
+    else {
+      const m = S.machines[t.from];
+      const box = m && MACHINES[m.type].store ? m.inp : m ? m.out : {};
+      q = Math.min(max, box[t.item] || 0, t.want || max);
+      if (q > 0) { box[t.item] -= q; if (!box[t.item]) delete box[t.item]; }
+    }
     if (!q) { d.task = null; return; }
     t.load = q; d.carry = t.item; t.phase = 'drop';
   } else {
@@ -924,9 +1098,9 @@ function haul(S, d, dt, obs, max) {
     else if (t.to === 'quai') { shipColis(S, null, d); if (t.load > 0) addStock(S, t.item, t.load); }
     else {
       const m = S.machines[t.to];
-      const q = m ? Math.min(needOf(S, m)[t.item] || 0, t.load) : 0;
+      const q = !m ? 0 : MACHINES[m.type].store ? t.load : Math.min(needOf(S, m)[t.item] || 0, t.load);
       if (q) m.inp[t.item] = (m.inp[t.item] || 0) + q;
-      if (t.load - q > 0) addStock(S, t.item, t.load - q);
+      if (t.load - q > 0) { if (isDecl(t.item) && S.machines.zone) S.machines.zone.inp[t.item] = (S.machines.zone.inp[t.item] || 0) + t.load - q; else addStock(S, t.item, t.load - q); }
     }
     t.load = 0; d.carry = null; d.task = null;
   }
@@ -945,10 +1119,12 @@ const BRAINS = {
           const sig = 'raw>' + m.id + k;
           if (!busy.has(sig)) cands.push({ score: (miss[k] > 0 || MACHINES[m.type].fuel ? 3 : 2), task: { from: 'hq', to: m.id, item: k, want: n, sig } });
         }
+        if (m.type === 'qualite' && hasAdjq(S)) continue;
         for (const [k, n] of Object.entries(m.out)) {
           if (n <= 0) continue;
+          if (isDecl(k) && !S.machines.zone) continue;
           const sig = 'out>' + m.id + k;
-          if (!busy.has(sig)) cands.push({ score: n >= OUT_MAX - 1 ? 2.5 : 1, task: { from: m.id, to: 'hq', item: k, sig } });
+          if (!busy.has(sig)) cands.push({ score: n >= OUT_MAX - 1 ? 2.5 : 1, task: { from: m.id, to: isDecl(k) ? 'zone' : 'hq', item: k, sig } });
         }
       }
       cands.sort((a, b) => b.score - a.score);
@@ -982,6 +1158,33 @@ const BRAINS = {
         const from = src ? src.id : (S.stock.colis || 0) > 0 ? 'hq' : null;
         if (from) cands.push({ score: 12, task: { from, to: 'quai', item: 'colis', want: left, sig: 'ship' } });
       }
+      cands.sort((a, b) => b.score - a.score);
+      if (!cands.length) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
+      d.task = { ...cands[0].task, phase: 'pick', load: 0 };
+    }
+    haul(S, d, dt, obs, 4);
+  },
+  // Circuit qualité : déclassées → contrôle → rebuts au recycleur, bonnes pièces à l'entrepôt
+  adjq(S, d, dt, obs) {
+    if (!d.task) {
+      const busy = busySigs(S, d);
+      const q = S.machines.qualite, z = S.machines.zone, rc = S.machines.recycleur;
+      const cands = [];
+      const push = (score, task) => { if (!busy.has(task.sig)) cands.push({ score, task }); };
+      if (q) {
+        for (const [k, n] of Object.entries(q.out)) {
+          if (n <= 0) continue;
+          if (isRebut(k)) push(9, { from: 'qualite', to: rc ? 'recycleur' : 'hq', item: k, sig: 'aq>' + k });
+          else push(8, { from: 'qualite', to: 'hq', item: k, sig: 'aq>' + k });
+        }
+        const room = Math.max(0, 6 - Object.entries(q.inp).reduce((a, [k, n]) => a + (isDecl(k) ? n : 0), 0));
+        if (room > 0 && z) for (const [k, n] of Object.entries(z.inp)) if (n > 0) push(7, { from: 'zone', to: 'qualite', item: k, want: room, sig: 'az>' + k });
+      }
+      for (const m of Object.values(S.machines)) {
+        if (m.type === 'qualite' || MACHINES[m.type].store) continue;
+        for (const [k, n] of Object.entries(m.out)) if (n > 0 && isDecl(k) && z) push(6, { from: m.id, to: 'zone', item: k, sig: 'ad>' + m.id + k });
+      }
+      if (rc) for (const [k, n] of Object.entries(S.stock)) if (n > 0 && isRebut(k) && (rc.inp[k] || 0) < 4) push(5, { from: 'hq', to: 'recycleur', item: k, want: 4, sig: 'ar>' + k });
       cands.sort((a, b) => b.score - a.score);
       if (!cands.length) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
       d.task = { ...cands[0].task, phase: 'pick', load: 0 };
@@ -1219,27 +1422,36 @@ function orders(S, dt) {
 }
 
 // ---------- objectifs ----------
+// Avancement d'un objectif chiffré : [fait, à faire]
+export function goalProgress(S, g) {
+  if (!g.c) return null;
+  const [kind, n, item] = g.c, st = S.stats, b = S.lv0 || snapshot(S);
+  let v = 0;
+  switch (kind) {
+    case 'made+': v = S.made - b.made; break;
+    case 'earn+': v = st.earned - b.earned; break;
+    case 'rep+': v = st.repairs - b.repairs; break;
+    case 'ctrl+': v = st.controlled - b.ctrl; break;
+    case 'recyc+': v = st.recycled - b.recyc; break;
+    case 'orders+': v = st.orders - b.orders; break;
+    case 'item+': v = (st.made[item] || 0) - (b.items[item] || 0); break;
+    case 'work': v = S.droids.filter((d) => d.st === 'work').length; break;
+    case 'crea': v = S.animals.filter((a) => a.st === 'installed').length; break;
+    case 'droids': v = S.droids.length; break;
+  }
+  return [Math.max(0, Math.min(n, v)), n];
+}
+
 export function goalStatus(S, gid) {
+  const g = LEVELS[S.level].goals.find((x) => x.id === gid);
+  if (g && g.c) { const [v, n] = goalProgress(S, g); return v >= n; }
   const M = S.machines, st = S.stats, has = (t) => S.droids.some((d) => d.type === t);
   switch (gid) {
     case 'core': return S.core.placed;
     case 'droid1': return S.made >= 1;
-    case 'assign2': return S.droids.filter((d) => d.type === 'ouvrier' && d.job && d.job !== 'hq').length >= 2;
-    case 'animal': return S.animals.some((a) => a.st === 'installed');
-    case 'fil4': return (st.made.fil || 0) >= 4;
     case 'fuel': return st.burned >= 1;
     case 'heavy': return st.heavyFixed >= 1;
-    case 'droids6': return S.droids.length >= 6;
-    case 'tole4': return (st.made.tole || 0) >= 4;
-    case 'made10': return S.made >= 10;
-    case 'ctrl6': return st.controlled >= 6;
-    case 'recyc2': return st.recycled >= 2;
     case 'qualiteD': return has('qualite');
-    case 'silicium2': return (st.made.silicium || 0) >= 2;
-    case 'circuitA1': return (st.made.circuitA || 0) >= 1;
-    case 'orders3': return st.orders >= 3;
-    case 'droids15': return S.droids.length >= 15;
-    case 'orders8': return st.orders >= 8;
   }
   if (PLOT_BY_ID[gid]) return !!M[gid];
   if (DROIDS[gid]) return has(gid);
@@ -1252,18 +1464,19 @@ function goals(S) {
   for (const g of L.goals) {
     if (!S.goals[g.id] && goalStatus(S, g.id)) {
       S.goals[g.id] = true;
-      S.credits += CREDITS.goal;
+      earn(S, CREDITS.goal);
       toast(S, 'all', `Objectif atteint : ${g.text} (+${CREDITS.goal} crédits)`, 'good');
     }
   }
   if (L.goals.every((g) => S.goals[g.id])) {
-    S.credits += CREDITS.level;
+    earn(S, CREDITS.level);
     if (S.level < LEVELS.length - 1) {
       S.level += 1;
+      S.lv0 = snapshot(S);
       sfx(S, 'all', 'won');
       fx(S, 'all', 'level', { n: S.level + 1, name: LEVELS[S.level].name });
       fx(S, 'all', 'save');
-      if (S.level === 3) {
+      if (S.level === T.heavyFrom) {
         S.power.battery = T.battery;
         S.forceHeavyAt = S.time + 45;
         toast(S, 'all', 'L’usine passe sur batterie de secours : construisez le générateur à temps !', 'warn');

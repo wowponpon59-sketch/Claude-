@@ -33,7 +33,11 @@ export function play(name) {
     case 'clong': tone(240, 0.35, 'square', 0.06, 0, 0.98); tone(360, 0.35, 'square', 0.05, 0.12, 0.98); break;
     case 'ding': tone(1320, 0.3, 'sine', 0.1); break;
     case 'order': tone(880, 0.1, 'sine', 0.1); tone(1175, 0.14, 'sine', 0.1, 0.11); break;
-    case 'call': tone(700, 0.12, 'square', 0.07); tone(700, 0.12, 'square', 0.07, 0.18); break;
+    case 'call': // sonnerie en deux coups, plus forte
+      for (const w of [0, 0.9]) { tone(880, 0.16, 'square', 0.16, w); tone(1175, 0.16, 'square', 0.16, w + 0.18); tone(880, 0.16, 'square', 0.16, w + 0.36); }
+      break;
+    case 'overheat': tone(220, 0.5, 'sawtooth', 0.14, 0, 0.5); tone(160, 0.7, 'sawtooth', 0.12, 0.45, 0.6); break;
+    case 'cred': tone(1320, 0.07, 'triangle', 0.06); tone(1760, 0.08, 'triangle', 0.05, 0.06); break;
     case 'won': [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'triangle', 0.12, i * 0.12)); break;
   }
 }

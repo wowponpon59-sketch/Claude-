@@ -39,6 +39,10 @@ export async function getPeerClass(mode) {
   throw new Error('Impossible de charger le module de connexion. Vérifie la connexion internet.');
 }
 
+// PeerJS refuse les messages JSON de plus de 16 300 octets : au-delà, il coupe la liaison.
+// On découpe donc les gros messages (l'état de l'usine dépasse cette taille vers le niveau 7).
+const CHUNK = 4000; // caractères : au pire 12 000 octets une fois encodés
+
 export class Link {
   constructor(PeerClass) {
     this.Peer = PeerClass;
@@ -48,21 +52,50 @@ export class Link {
     this.onClose = () => {};
     this.onOpen = () => {};
     this.closed = false;
+    this.seq = 0;
+    this.parts = null;
+    this.code = null;
   }
 
   get open() { return !!(this.conn && this.conn.open); }
 
+  // msg : un objet, ou un texte JSON déjà prêt
   send(msg) {
-    if (this.conn && this.conn.open) {
-      try { this.conn.send(msg); } catch (e) { /* ignoré */ }
-    }
+    const c = this.conn;
+    if (!c || !c.open) return;
+    try {
+      const s = typeof msg === 'string' ? msg : JSON.stringify(msg);
+      if (s.length <= CHUNK) { c.send(typeof msg === 'string' ? { t: 'k', id: 0, i: 0, n: 1, d: s } : msg); return; }
+      const id = ++this.seq, n = Math.ceil(s.length / CHUNK);
+      for (let i = 0; i < n; i++) c.send({ t: 'k', id, i, n, d: s.slice(i * CHUNK, (i + 1) * CHUNK) });
+    } catch (e) { /* ignoré */ }
+  }
+
+  _deliver(text) {
+    let m;
+    try { m = JSON.parse(text); } catch (e) { return; }
+    this.onMessage(m);
   }
 
   _wire(conn) {
     this.conn = conn;
-    conn.on('data', (d) => this.onMessage(d));
-    conn.on('close', () => this._lost());
-    conn.on('error', () => this._lost());
+    this.parts = null;
+    conn.on('data', (d) => {
+      if (conn !== this.conn) return;
+      if (d && d.t === 'k' && typeof d.d === 'string') {
+        if (d.n === 1) { this._deliver(d.d); return; }
+        let b = this.parts;
+        if (!b || b.id !== d.id) b = this.parts = { id: d.id, n: d.n, got: 0, a: [] };
+        if (b.a[d.i] === undefined) { b.a[d.i] = d.d; b.got += 1; }
+        if (b.got === b.n) { this.parts = null; this._deliver(b.a.join('')); }
+        return;
+      }
+      this.onMessage(d);
+    });
+    conn.on('open', () => { conn.wasOpen = true; });
+    conn.on('close', () => { if (conn === this.conn && conn.wasOpen) this._lost(); });
+    // Une erreur n'est grave que si la liaison est vraiment fermée
+    conn.on('error', () => { setTimeout(() => { if (conn === this.conn && conn.wasOpen && !conn.open) this._lost(); }, 800); });
   }
 
   _lost() {
@@ -71,23 +104,22 @@ export class Link {
     this.onClose();
   }
 
-  // Hôte : réserve le code et attend l'invité. Résout avec le code.
-  host() {
+  // Hôte : réserve le code (de préférence celui d'avant, pour que l'invité se reconnecte tout seul) et attend l'invité.
+  host(preferred) {
     return new Promise((resolve, reject) => {
       let tries = 0;
       const attempt = () => {
-        const code = makeCode();
+        const code = tries === 0 && preferred ? preferred : makeCode();
         const peer = new this.Peer(PREFIX + code.toLowerCase(), { debug: 1 });
         let opened = false;
-        peer.on('open', () => { opened = true; this.peer = peer; resolve(code); });
+        peer.on('open', () => { opened = true; this.peer = peer; this.code = code; resolve(code); });
         peer.on('connection', (conn) => {
           if (this.conn && this.conn.open) { conn.on('open', () => conn.close()); return; }
-          this.closed = false;
           this._wire(conn);
-          conn.on('open', () => this.onOpen());
+          conn.on('open', () => { if (conn !== this.conn) return; this.closed = false; this.onOpen(); });
         });
         peer.on('error', (err) => {
-          if (!opened && err && err.type === 'unavailable-id' && tries++ < 4) { peer.destroy(); attempt(); return; }
+          if (!opened && err && err.type === 'unavailable-id' && tries++ < 5) { peer.destroy(); attempt(); return; }
           if (!opened) reject(new Error(describe(err)));
         });
         peer.on('disconnected', () => { try { if (!peer.destroyed) peer.reconnect(); } catch (e) { /* ignoré */ } });
@@ -97,17 +129,18 @@ export class Link {
   }
 
   // Invité : rejoint la partie d'après son code.
-  join(code) {
+  join(code, wait = 15000) {
     return new Promise((resolve, reject) => {
       const peer = new this.Peer({ debug: 1 });
       this.peer = peer;
+      this.code = code;
       let done = false;
       const fail = (m) => { if (!done) { done = true; reject(new Error(m)); } };
-      const timer = setTimeout(() => fail('Pas de réponse. Vérifie le code et que la partie est bien ouverte.'), 15000);
+      const timer = setTimeout(() => fail('Pas de réponse. Vérifie le code et que la partie est bien ouverte.'), wait);
       peer.on('open', () => {
         const conn = peer.connect(PREFIX + code.toLowerCase(), { reliable: true, serialization: 'json' });
         this._wire(conn);
-        conn.on('open', () => { if (done) return; done = true; clearTimeout(timer); resolve(); this.onOpen(); });
+        conn.on('open', () => { if (done) return; done = true; clearTimeout(timer); this.closed = false; resolve(); this.onOpen(); });
       });
       peer.on('error', (err) => { clearTimeout(timer); fail(describe(err)); });
     });
@@ -137,7 +170,13 @@ class Emitter {
 
 class FakeConn extends Emitter {
   constructor(peer, cid, remote) { super(); this.peer = peer; this.cid = cid; this.peerId = remote; this.open = false; }
-  send(data) { this.peer.bus.postMessage({ k: 'data', cid: this.cid, from: this.peer.id, data: JSON.parse(JSON.stringify(data)) }); }
+  send(data) {
+    const s = JSON.stringify(data);
+    // Comme PeerJS : au-delà de 16 300 octets, erreur
+    if (new TextEncoder().encode(s).byteLength >= 16300) { this.emit('error', { type: 'message-too-big' }); return; }
+    if (!this.open) return;
+    this.peer.bus.postMessage({ k: 'data', cid: this.cid, from: this.peer.id, data: JSON.parse(s) });
+  }
   close() { if (!this.open) return; this.open = false; this.peer.bus.postMessage({ k: 'close', cid: this.cid, from: this.peer.id }); this.emit('close'); }
 }
 
@@ -145,7 +184,8 @@ export class FakePeer extends Emitter {
   constructor(id) {
     super();
     this.id = typeof id === 'string' ? id : 'anon-' + Math.random().toString(36).slice(2, 8);
-    this.bus = new BroadcastChannel('twosupply-v02-fakepeer');
+    this.bus = new BroadcastChannel('twosupply-v03-fakepeer');
+    FakePeer.all.add(this);
     this.conns = {};
     this.destroyed = false;
     this.bus.onmessage = (e) => this._rx(e.data);
@@ -178,5 +218,8 @@ export class FakePeer extends Emitter {
     return c;
   }
   reconnect() {}
-  destroy() { this.destroyed = true; Object.values(this.conns).forEach((c) => c.close()); this.bus.close(); }
+  destroy() { this.destroyed = true; FakePeer.all.delete(this); Object.values(this.conns).forEach((c) => c.close()); this.bus.close(); }
 }
+FakePeer.all = new Set();
+// Tests : couper toutes les liaisons de cet onglet (comme un écran verrouillé)
+if (typeof window !== 'undefined') window.__cutLinks = () => { for (const p of FakePeer.all) for (const c of Object.values(p.conns)) c.close(); };

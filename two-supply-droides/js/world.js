@@ -58,9 +58,9 @@ function corridorDist(x, z) {
 // Passages dans les ruines : pour entrer ou sortir de la dalle (droïdes), gardés libres de tout obstacle.
 export const GATES = [
   { in: { x: -3, z: -13.6 }, out: { x: -3, z: -17.4 } }, { in: { x: 15, z: -13.6 }, out: { x: 15, z: -17.4 } },
-  { in: { x: -20.6, z: 0.5 }, out: { x: -24.4, z: 0.5 } }, { in: { x: 20.6, z: -10 }, out: { x: 24.4, z: -10 } },
+  { in: { x: -20.6, z: 0.5 }, out: { x: -24.4, z: 0.5 } }, { in: { x: 20.6, z: -4.2 }, out: { x: 24.4, z: -4.2 } },
   { in: { x: 20.6, z: 11 }, out: { x: 24.4, z: 11 } }, { in: { x: -12, z: 14.6 }, out: { x: -12, z: 18.4 } },
-  { in: { x: 8, z: 14.6 }, out: { x: 8, z: 18.4 } },
+  { in: { x: 4.4, z: 14.6 }, out: { x: 4.4, z: 18.4 } },
 ];
 const gateDist = (x, z) => Math.min(...GATES.map((g) => Math.hypot(x - g.out.x, z - g.out.z)));
 

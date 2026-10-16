@@ -1,8 +1,8 @@
-// Two Supply — Droïdes (prototype 0.3)
+// Two Supply — Droïdes (version 0.4)
 // Repère : x vers l'est, z vers le sud, y vers le haut. Unité : mètre.
 
-export const VERSION = '0.3';
-export const SAVE_KEY = 'twosupply-droides-save-v03';
+export const VERSION = '0.4';
+export const SAVE_KEY = 'twosupply-droides-save-v04';
 
 export const WORLD = { half: 40 };
 export const SLAB = { x0: -22, x1: 22, z0: -15, z1: 16 };
@@ -22,7 +22,7 @@ export const PLAYER_COLORS = {
 };
 
 // ---------- objets ----------
-// kind : raw (matière première), part (pièce fabriquée), kit (kit de spécialisation)
+// kind : raw (matière première), part (pièce fabriquée), kit (kit de spécialisation), decl (pièce déclassée), rebut
 export const ITEMS = {
   fer: { name: 'Fer', kind: 'raw', css: '#93a7bd' },
   verre: { name: 'Verre', kind: 'raw', css: '#79e3ea' },
@@ -38,36 +38,54 @@ export const ITEMS = {
 
   carcasse: { name: 'Carcasse', kind: 'part', css: '#b9c2cc' },
   circuit: { name: 'Circuit', kind: 'part', css: '#36b36a' },
+  isolant: { name: 'Isolant céramique', kind: 'part', css: '#eef3f8' },
   fil: { name: 'Fil de cuivre', kind: 'part', css: '#f0902c' },
   lingot: { name: 'Lingot', kind: 'part', css: '#8796a8' },
   tole: { name: 'Tôle', kind: 'part', css: '#a9b7c7' },
   silicium: { name: 'Plaque de silicium', kind: 'part', css: '#7b6cf0' },
   circuitA: { name: 'Circuit avancé', kind: 'part', css: '#e6b422' },
-  carcasseB: { name: 'Carcasse à contrôler', kind: 'part', css: '#b9c2cc', check: true },
-  circuitB: { name: 'Circuit à contrôler', kind: 'part', css: '#36b36a', check: true },
-  rebut: { name: 'Rebut', kind: 'part', css: '#8a8f96' },
   carton: { name: 'Carton', kind: 'part', css: '#c99a5b' },
   caisse: { name: 'Droïde en caisse', kind: 'part', css: '#d9a441' },
   colis: { name: 'Colis', kind: 'part', css: '#d9b27a' },
 
   k_scanner: { name: 'Scanner de stock', kind: 'kit', css: '#3f99ff', glyph: 'S' },
   k_outils: { name: 'Boîte à outils', kind: 'kit', css: '#e04a3a', glyph: 'O' },
-  k_tablette: { name: 'Tablette de plans', kind: 'kit', css: '#b366ff', glyph: 'T' },
   k_detect: { name: 'Détecteur', kind: 'kit', css: '#22c3b4', glyph: 'D' },
+  k_tablette: { name: 'Tablette de plans', kind: 'kit', css: '#b366ff', glyph: 'T' },
   k_valise: { name: 'Valise d’expert', kind: 'kit', css: '#1f8f4e', glyph: 'V' },
   k_terminal: { name: 'Terminal logistique', kind: 'kit', css: '#2b4fd6', glyph: 'L' },
   k_lecteur: { name: 'Lecteur qualité', kind: 'kit', css: '#f2f2f2', glyph: 'Q' },
+  k_chariot: { name: 'Chariot de tri', kind: 'kit', css: '#e2463f', glyph: 'R' },
   k_bras: { name: 'Bras multi-outils', kind: 'kit', css: '#ff7a1a', glyph: 'B' },
   k_flux: { name: 'Analyseur de flux', kind: 'kit', css: '#5b4bd8', glyph: 'F' },
   k_achat: { name: 'Terminal d’achat', kind: 'kit', css: '#ff6fb1', glyph: 'A' },
   k_planning: { name: 'Planning de production', kind: 'kit', css: '#c7ced6', glyph: 'P' },
   k_pilotage: { name: 'Poste de pilotage', kind: 'kit', css: '#f2c14e', glyph: 'C' },
 };
+// Pièces qui peuvent sortir « déclassées » (une fois le contrôle qualité en place), et ce que donne leur rebut au recyclage
+export const QC_BASES = {
+  carcasse: { decl: 'Carcasse déclassée', rebut: 'Rebut de carcasse', back: { fer: 1 } },
+  circuit: { decl: 'Circuit déclassé', rebut: 'Rebut de circuit', back: { verre: 1 } },
+  circuitA: { decl: 'Circuit avancé déclassé', rebut: 'Rebut de circuit avancé', back: { sable: 1, cuivre: 1 } },
+  fil: { decl: 'Fil de cuivre déclassé', rebut: 'Rebut de fil', back: { cuivre: 1 } },
+  lingot: { decl: 'Lingot déclassé', rebut: 'Rebut de lingot', back: { fer: 1 } },
+  tole: { decl: 'Tôle déclassée', rebut: 'Rebut de tôle', back: { fer: 1 } },
+  silicium: { decl: 'Plaque de silicium déclassée', rebut: 'Rebut de silicium', back: { sable: 1 } },
+  isolant: { decl: 'Isolant déclassé', rebut: 'Rebut d’isolant', back: { argile: 1 } },
+  verre: { decl: 'Verre déclassé', rebut: 'Rebut de verre', back: { sable: 1 } },
+  carton: { decl: 'Carton déclassé', rebut: 'Rebut de carton', back: { bois: 1 } },
+};
+for (const [b, q] of Object.entries(QC_BASES)) {
+  ITEMS[b + '_d'] = { name: q.decl, kind: 'decl', base: b, css: ITEMS[b].css };
+  ITEMS[b + '_r'] = { name: q.rebut, kind: 'rebut', base: b, css: ITEMS[b].css };
+}
 export const RAW = ['fer', 'verre', 'argile', 'calcaire', 'eau', 'cuivre', 'caoutchouc', 'sable', 'charbon', 'plastique', 'bois'];
 export const ITEM_ORDER = Object.keys(ITEMS);
 export const isRaw = (k) => ITEMS[k] && ITEMS[k].kind === 'raw';
+export const isDecl = (k) => ITEMS[k] && ITEMS[k].kind === 'decl';
+export const isRebut = (k) => ITEMS[k] && ITEMS[k].kind === 'rebut';
 // Niveau (index 0 = niveau 1) à partir duquel une matière est utile : sert à l'agent de recherche
-export const RAW_LEVEL = { fer: 0, verre: 0, argile: 0, calcaire: 0, eau: 0, cuivre: 2, caoutchouc: 2, charbon: 3, bois: 3, plastique: 5, sable: 7 };
+export const RAW_LEVEL = { fer: 0, verre: 0, argile: 0, calcaire: 0, eau: 0, caoutchouc: 4, charbon: 4, bois: 4, cuivre: 6, plastique: 8, sable: 15 };
 
 // ---------- débris à fouiller ----------
 export const NODE_TYPES = {
@@ -85,7 +103,7 @@ export const NODE_TYPES = {
   palettes: { name: 'Palettes en bois', item: 'bois', qty: 5, r: 1.1 },
 };
 // Proportion de chaque type sur la carte (tirage aléatoire à chaque partie)
-export const NODE_MIX = { epave: 6, ferraille: 6, vitres: 6, argile: 5, calcaire: 5, citerne: 4, cables: 6, pneus: 5, dune: 5, charbon: 6, bidons: 5, palettes: 5 };
+export const NODE_MIX = { epave: 6, ferraille: 6, vitres: 6, argile: 6, calcaire: 5, citerne: 4, cables: 6, pneus: 5, dune: 5, charbon: 6, bidons: 5, palettes: 5 };
 
 export const T = {
   dig: 0.7,
@@ -95,87 +113,106 @@ export const T = {
   spec: 6,
   panneStart: 120,      // premières pannes dès 2 minutes de jeu
   wear: [70, 130],      // secondes de fonctionnement avant une panne
-  heavyFrom: 3,         // niveau 4 (index 3) : pannes lourdes
+  heavyFrom: 4,         // niveau 5 (index 4) : pannes lourdes
   animalBoost: 0.25,
   animalMax: 2,
   bumpBack: 90,
-  battery: 150,         // batterie de secours au niveau 4 (secondes de marche)
-  fuel: { charbon: 30, bois: 15 },
-  defect: 0.2,
+  battery: 150,         // batterie de secours à l'arrivée du courant (secondes)
+  genCap: 5,            // le générateur contient 5 unités de charbon ou de bois
+  genUnit: 720,         // 1 unité brûlée toutes les 12 minutes de jeu
+  overheatAt: 3600,     // surchauffe après 1 heure de jeu avec le générateur
+  overheatLock: 1800,   // pause obligatoire de 30 minutes (temps réel)
+  restReset: 1800,      // 30 minutes sans jouer : le compteur repart de zéro
+  declRate: 0.2,        // 20 % des pièces sortent déclassées
+  rebutRate: 0.5,       // au contrôle : 1 déclassée sur 2 part au rebut
+  rebutRateResp: 1 / 3, // 1 sur 3 avec le responsable qualité
+  rebutMaxRun: 10,      // jamais plus de 10 contrôles d'affilée sans rebut
 };
 export const SCREWS = 10;
 
 // ---------- recettes ----------
-// lvl : niveau minimal (index), need : machine qui doit exister, until : disparaît quand cette machine existe
+// lvl : niveau minimal (index), need : machine(s) qui doivent exister, any : prend n'importe quelle pièce de cette sorte
 export const RECIPES = {
-  carcasse: { name: 'Carcasse', in: { fer: 2, eau: 1 }, out: { carcasse: 1 }, time: 8, lvl: 0, until: 'laminoir', repl: 'carcasseT' },
-  carcasseT: { name: 'Carcasse (tôle)', in: { tole: 2, eau: 1 }, out: { carcasse: 1 }, time: 6, lvl: 0, need: 'laminoir' },
-  outils: { name: 'Boîte à outils', in: { fer: 2, calcaire: 1 }, out: { k_outils: 1 }, time: 6, lvl: 1 },
-  valise: { name: 'Valise d’expert', in: { k_outils: 1, tole: 2, fil: 2 }, out: { k_valise: 1 }, time: 8, lvl: 4 },
-  bras: { name: 'Bras multi-outils', in: { circuitA: 1, tole: 2 }, out: { k_bras: 1 }, time: 8, lvl: 7 },
+  carcasse: { name: 'Carcasse', in: { fer: 2, eau: 1 }, out: { carcasse: 1 }, time: 8, lvl: 0 },
+  carcasseT: { name: 'Carcasse en tôle', in: { tole: 2, eau: 1 }, out: { carcasse: 1 }, time: 6, lvl: 0, need: ['laminoir'] },
+  carcasseL: { name: 'Carcasse moulée', in: { lingot: 1, plastique: 1 }, out: { carcasse: 1 }, time: 5, lvl: 0, need: ['fonderie'] },
 
   circuit: { name: 'Circuit', in: { verre: 1, calcaire: 1 }, out: { circuit: 1 }, time: 8, lvl: 0 },
-  circuitA: { name: 'Circuit avancé', in: { silicium: 1, fil: 2, plastique: 1 }, out: { circuitA: 1 }, time: 9, lvl: 7 },
-  scanner: { name: 'Scanner de stock', in: { circuit: 1, verre: 2 }, out: { k_scanner: 1 }, time: 6, lvl: 1 },
-  detect: { name: 'Détecteur', in: { circuit: 1, fer: 2, verre: 1 }, out: { k_detect: 1 }, time: 6, lvl: 2 },
-  tablette: { name: 'Tablette de plans', in: { circuit: 2, fil: 1 }, out: { k_tablette: 1 }, time: 6, lvl: 2 },
-  terminal: { name: 'Terminal logistique', in: { circuit: 2, tole: 1, plastique: 1 }, out: { k_terminal: 1 }, time: 7, lvl: 5 },
-  lecteur: { name: 'Lecteur qualité', in: { circuit: 1, plastique: 1, verre: 1 }, out: { k_lecteur: 1 }, time: 6, lvl: 6 },
-  flux: { name: 'Analyseur de flux', in: { circuitA: 1, fil: 1, verre: 1 }, out: { k_flux: 1 }, time: 7, lvl: 7 },
-  achatT: { name: 'Terminal d’achat', in: { circuit: 1, plastique: 2 }, out: { k_achat: 1 }, time: 6, lvl: 8 },
-  planning: { name: 'Planning de production', in: { circuitA: 1, plastique: 2, fil: 1 }, out: { k_planning: 1 }, time: 7, lvl: 9 },
-  pilotage: { name: 'Poste de pilotage', in: { circuitA: 2, tole: 2, verre: 1 }, out: { k_pilotage: 1 }, time: 8, lvl: 9 },
+  circuitF: { name: 'Circuit au cuivre', in: { fil: 1, verre: 1 }, out: { circuit: 1 }, time: 6, lvl: 0, need: ['trefileuse'] },
+  circuitC: { name: 'Circuit sur céramique', in: { isolant: 1, fil: 1 }, out: { circuit: 1 }, time: 5, lvl: 0, need: ['ceramique', 'trefileuse'] },
+  circuitS: { name: 'Circuit au silicium (×2)', in: { silicium: 1, fil: 1 }, out: { circuit: 2 }, time: 8, lvl: 0, need: ['four'] },
+  circuitA: { name: 'Circuit avancé', in: { silicium: 1, fil: 2, plastique: 1 }, out: { circuitA: 1 }, time: 9, lvl: 15, need: ['four'] },
+
+  outils: { name: 'Boîte à outils', in: { fer: 2, calcaire: 1 }, out: { k_outils: 1 }, time: 6, lvl: 2 },
+  scanner: { name: 'Scanner de stock', in: { circuit: 1, verre: 2 }, out: { k_scanner: 1 }, time: 6, lvl: 2 },
+  detect: { name: 'Détecteur', in: { circuit: 1, fer: 2, verre: 1 }, out: { k_detect: 1 }, time: 6, lvl: 6 },
+  tablette: { name: 'Tablette de plans', in: { circuit: 2, isolant: 1 }, out: { k_tablette: 1 }, time: 6, lvl: 6 },
+  valise: { name: 'Valise d’expert', in: { k_outils: 1, tole: 2, fil: 2 }, out: { k_valise: 1 }, time: 8, lvl: 8 },
+  terminal: { name: 'Terminal logistique', in: { circuit: 2, tole: 1, plastique: 1 }, out: { k_terminal: 1 }, time: 7, lvl: 10 },
+  lecteur: { name: 'Lecteur qualité', in: { circuit: 1, plastique: 1, verre: 1 }, out: { k_lecteur: 1 }, time: 6, lvl: 12 },
+  chariot: { name: 'Chariot de tri', in: { tole: 2, caoutchouc: 2, isolant: 1 }, out: { k_chariot: 1 }, time: 7, lvl: 13 },
+  bras: { name: 'Bras multi-outils', in: { circuitA: 1, tole: 2 }, out: { k_bras: 1 }, time: 8, lvl: 15 },
+  flux: { name: 'Analyseur de flux', in: { circuitA: 1, fil: 1, isolant: 1 }, out: { k_flux: 1 }, time: 7, lvl: 15 },
+  achatT: { name: 'Terminal d’achat', in: { circuit: 1, plastique: 2 }, out: { k_achat: 1 }, time: 6, lvl: 17 },
+  planning: { name: 'Planning de production', in: { circuitA: 1, plastique: 2, fil: 1 }, out: { k_planning: 1 }, time: 7, lvl: 19 },
+  pilotage: { name: 'Poste de pilotage', in: { circuitA: 2, tole: 2, verre: 1 }, out: { k_pilotage: 1 }, time: 8, lvl: 19 },
 
   droide: { name: 'Droïde standard', in: { carcasse: 1, circuit: 1 }, out: { droide: 1 }, time: 10, lvl: 0 },
-  caisse: { name: 'Droïde à livrer (en caisse)', in: { carcasse: 1, circuit: 1, bois: 1 }, out: { caisse: 1 }, time: 10, lvl: 8 },
+  caisse: { name: 'Droïde à livrer (en caisse)', in: { carcasse: 1, circuit: 1, bois: 1 }, out: { caisse: 1 }, time: 10, lvl: 17 },
 
-  fil: { name: 'Fil de cuivre', in: { cuivre: 1 }, out: { fil: 2 }, time: 5, lvl: 2 },
-  lingot: { name: 'Lingot', in: { fer: 1, charbon: 1 }, out: { lingot: 1 }, time: 5, lvl: 4 },
-  tole: { name: 'Tôle', in: { lingot: 1 }, out: { tole: 2 }, time: 5, lvl: 4 },
-  ctrlC: { name: 'Contrôler les carcasses', in: { carcasseB: 1 }, out: { carcasse: 1 }, time: 3, lvl: 6, qc: true },
-  ctrlK: { name: 'Contrôler les circuits', in: { circuitB: 1 }, out: { circuit: 1 }, time: 3, lvl: 6, qc: true },
-  recyc: { name: 'Recycler un rebut', in: { rebut: 1 }, out: { fer: 1 }, time: 4, lvl: 6 },
-  verreF: { name: 'Verre fondu', in: { sable: 2, charbon: 1 }, out: { verre: 2 }, time: 6, lvl: 7 },
-  silicium: { name: 'Plaque de silicium', in: { sable: 1, calcaire: 1, charbon: 1 }, out: { silicium: 1 }, time: 7, lvl: 7 },
-  carton: { name: 'Cartons', in: { bois: 1, plastique: 1 }, out: { carton: 2 }, time: 4, lvl: 8 },
-  colis: { name: 'Colis (emballer un droïde)', in: { caisse: 1, carton: 1 }, out: { colis: 1 }, time: 5, lvl: 8 },
+  isolant: { name: 'Isolants céramiques (×2)', in: { argile: 2, eau: 1 }, out: { isolant: 2 }, time: 6, lvl: 3 },
+  fil: { name: 'Fil de cuivre (×2)', in: { cuivre: 1 }, out: { fil: 2 }, time: 5, lvl: 6 },
+  lingot: { name: 'Lingot', in: { fer: 1, charbon: 1 }, out: { lingot: 1 }, time: 5, lvl: 8 },
+  tole: { name: 'Tôles (×2)', in: { lingot: 1 }, out: { tole: 2 }, time: 5, lvl: 8 },
+  ctrl: { name: 'Contrôler les pièces déclassées', in: {}, out: {}, any: 'decl', time: 3, lvl: 12 },
+  recyc: { name: 'Recycler les rebuts', in: {}, out: {}, any: 'rebut', time: 4, lvl: 13 },
+  verreF: { name: 'Verre fondu (×2)', in: { sable: 2, charbon: 1 }, out: { verre: 2 }, time: 6, lvl: 15 },
+  silicium: { name: 'Plaque de silicium', in: { sable: 1, calcaire: 1, charbon: 1 }, out: { silicium: 1 }, time: 7, lvl: 15 },
+  carton: { name: 'Cartons (×2)', in: { bois: 1, plastique: 1 }, out: { carton: 2 }, time: 4, lvl: 17 },
+  colis: { name: 'Colis (emballer un droïde)', in: { caisse: 1, carton: 1 }, out: { colis: 1 }, time: 5, lvl: 17 },
 };
-// Une fois le poste qualité construit, ces pièces sortent « à contrôler »
-export const QC_MAP = { carcasse: 'carcasseB', circuit: 'circuitB' };
 
 // ---------- machines ----------
+const KIT_RECIPES = ['outils', 'scanner', 'detect', 'tablette', 'valise', 'terminal', 'lecteur', 'chariot', 'bras', 'flux', 'achatT', 'planning', 'pilotage'];
 export const MACHINES = {
-  forge: { name: 'Forge', w: 3.2, d: 2.4, recipes: ['carcasse', 'carcasseT', 'outils', 'valise', 'bras'], cost: { argile: 6, calcaire: 3, eau: 2, fer: 3 }, desc: 'Carcasses et outils' },
-  circuits: { name: 'Atelier de circuits', w: 3.2, d: 2.4, recipes: ['circuit', 'circuitA', 'scanner', 'detect', 'tablette', 'terminal', 'lecteur', 'flux', 'achatT', 'planning', 'pilotage'], cost: { argile: 4, calcaire: 2, verre: 4, fer: 2 }, desc: 'Circuits et kits électroniques' },
-  assembleur: { name: 'Assembleur de droïdes', w: 3.6, d: 2.8, core: true, recipes: ['droide', 'caisse'], cost: { fer: 4, verre: 2 }, desc: 'Carcasse + circuit → droïde' },
+  forge: { name: 'Forge', w: 3.2, d: 2.4, recipes: ['carcasse', 'carcasseT', 'carcasseL'], cost: { argile: 6, calcaire: 3, eau: 2, fer: 3 }, desc: 'Carcasses' },
+  circuits: { name: 'Atelier de circuits', w: 3.2, d: 2.4, recipes: ['circuit', 'circuitF', 'circuitC', 'circuitS', 'circuitA'], cost: { argile: 4, calcaire: 2, verre: 4, fer: 2 }, desc: 'Circuits' },
+  assembleur: { name: 'Assembleur de droïdes', w: 3.6, d: 2.8, core: true, noDecl: true, recipes: ['droide', 'caisse'], cost: { fer: 4, verre: 2 }, desc: 'Carcasse + circuit → droïde' },
+  etabli: { name: 'Établi des kits', w: 3.2, d: 2.2, noDecl: true, recipes: KIT_RECIPES, cost: { fer: 4, argile: 3, verre: 2, circuit: 1 }, desc: 'Kits de spécialisation des droïdes' },
   atelier: { name: 'Atelier de spécialisation', w: 3.4, d: 2.6, recipes: [], cost: { fer: 6, verre: 3, circuit: 2, carcasse: 2 }, desc: 'Droïde standard + kit → employé spécialisé' },
+  ceramique: { name: 'Four à céramique', w: 3.0, d: 2.4, recipes: ['isolant'], cost: { argile: 6, calcaire: 3, fer: 2, eau: 2 }, desc: 'Argile → isolants céramiques' },
+  generateur: { name: 'Générateur', w: 2.8, d: 2.2, recipes: [], fuel: true, cost: { fer: 6, isolant: 4, caoutchouc: 2, argile: 3 }, desc: 'Brûle 1 charbon ou 1 bois toutes les 12 minutes' },
   trefileuse: { name: 'Tréfileuse', w: 2.8, d: 2.0, recipes: ['fil'], cost: { fer: 4, cuivre: 3, caoutchouc: 2 }, desc: 'Cuivre → fil de cuivre' },
-  generateur: { name: 'Générateur', w: 2.8, d: 2.2, recipes: [], fuel: true, cost: { fer: 6, fil: 4, caoutchouc: 2, argile: 3 }, desc: 'Brûle charbon ou bois pour alimenter l’usine' },
   fonderie: { name: 'Fonderie', w: 3.0, d: 2.4, recipes: ['lingot'], cost: { argile: 8, calcaire: 4, fer: 4, charbon: 2 }, desc: 'Fer + charbon → lingot' },
   laminoir: { name: 'Laminoir', w: 3.4, d: 2.0, recipes: ['tole'], cost: { fer: 6, lingot: 3, caoutchouc: 2, fil: 2 }, desc: 'Lingot → tôles' },
-  qualite: { name: 'Poste de contrôle qualité', w: 3.0, d: 2.2, recipes: ['ctrlC', 'ctrlK'], cost: { tole: 4, verre: 3, circuit: 2, plastique: 2 }, desc: 'Trie les pièces : bonnes ou rebuts' },
-  recycleur: { name: 'Recycleur', w: 2.8, d: 2.2, recipes: ['recyc'], cost: { tole: 4, caoutchouc: 2, fil: 2 }, desc: 'Rebut → fer' },
+  qualite: { name: 'Poste de contrôle qualité', w: 3.0, d: 2.2, noDecl: true, recipes: ['ctrl'], cost: { tole: 4, verre: 3, circuit: 2, plastique: 2 }, desc: 'Déclassé → bonne pièce ou rebut' },
+  zone: { name: 'Zone des déclassés', w: 3.6, d: 2.2, recipes: [], store: true, cost: { bois: 4, fer: 2 }, desc: 'Stocke les pièces déclassées avant le contrôle' },
+  recycleur: { name: 'Recycleur', w: 2.8, d: 2.2, noDecl: true, recipes: ['recyc'], cost: { tole: 4, caoutchouc: 2, fil: 2 }, desc: 'Rebut → matière première' },
   four: { name: 'Four à verre', w: 3.0, d: 2.4, recipes: ['verreF', 'silicium'], cost: { argile: 6, calcaire: 4, tole: 2, sable: 4 }, desc: 'Sable fondu : verre et silicium' },
   emballeuse: { name: 'Emballeuse', w: 3.2, d: 2.2, recipes: ['carton', 'colis'], cost: { tole: 4, bois: 4, plastique: 3, caoutchouc: 2 }, desc: 'Cartons et colis' },
   quai: { name: 'Quai d’expédition', w: 4.0, d: 2.2, recipes: [], cost: { bois: 6, tole: 2, fer: 4 }, desc: 'Livrez les colis aux clients' },
 };
 
+// level : niveau (à partir de 1) où le chantier apparaît
 export const PLOTS = [
   { id: 'forge', type: 'forge', x: -17, z: -10, level: 1 },
   { id: 'circuits', type: 'circuits', x: -8.5, z: -10, level: 1 },
   { id: 'assembleur', type: 'assembleur', x: 0, z: -10, level: 1 },
-  { id: 'atelier', type: 'atelier', x: 8.5, z: -10, level: 2 },
-  { id: 'trefileuse', type: 'trefileuse', x: 17, z: -10, level: 3 },
-  { id: 'generateur', type: 'generateur', x: -17, z: -1.5, level: 4 },
-  { id: 'fonderie', type: 'fonderie', x: -8.5, z: -1.5, level: 5 },
-  { id: 'laminoir', type: 'laminoir', x: 8.5, z: -1.5, level: 5 },
-  { id: 'forge2', type: 'forge', x: 17, z: -1.5, level: 6 },
-  { id: 'circuits2', type: 'circuits', x: -17, z: 7, level: 6 },
-  { id: 'qualite', type: 'qualite', x: 0, z: 7, level: 7 },
-  { id: 'recycleur', type: 'recycleur', x: 8.5, z: 7, level: 7 },
-  { id: 'four', type: 'four', x: -8.5, z: 7, level: 8 },
-  { id: 'emballeuse', type: 'emballeuse', x: 17, z: 7, level: 9 },
-  { id: 'quai', type: 'quai', x: 17, z: 13, level: 9 },
+  { id: 'atelier', type: 'atelier', x: 8.5, z: -10, level: 3 },
+  { id: 'etabli', type: 'etabli', x: 17, z: -10, level: 3 },
+  { id: 'generateur', type: 'generateur', x: -17, z: -1.5, level: 5 },
+  { id: 'ceramique', type: 'ceramique', x: -8.5, z: -1.5, level: 4 },
+  { id: 'trefileuse', type: 'trefileuse', x: 8.5, z: -1.5, level: 7 },
+  { id: 'forge2', type: 'forge', x: 17, z: -1.5, level: 11 },
+  { id: 'fonderie', type: 'fonderie', x: -17, z: 7, level: 9 },
+  { id: 'laminoir', type: 'laminoir', x: -8.5, z: 7, level: 9 },
+  { id: 'qualite', type: 'qualite', x: 0, z: 7, level: 13 },
+  { id: 'recycleur', type: 'recycleur', x: 8.5, z: 7, level: 14 },
+  { id: 'circuits2', type: 'circuits', x: 17, z: 7, level: 11 },
+  { id: 'four', type: 'four', x: -17, z: 13, level: 16 },
+  { id: 'zone', type: 'zone', x: 0, z: 13, level: 13 },
+  { id: 'emballeuse', type: 'emballeuse', x: 8.5, z: 13, level: 18 },
+  { id: 'quai', type: 'quai', x: 17, z: 13, level: 18 },
 ];
 
 export const ENTREPOT = { x: 0, z: -1.5, w: 4.2, d: 1.8 };
@@ -183,35 +220,56 @@ export const START = { A: { x: -1.2, z: 2.4 }, B: { x: 1.2, z: 2.8 } };
 export const CORE = { x: 32, z: -27, w: 1.8, d: 1.3, handle: 1.45 };
 
 // ---------- droïdes : de l'ouvrier au chef de production ----------
-// work : 'machine' (affecté à une machine) ou 'hq' (mis au travail à l'entrepôt)
+// work : 'machine' (affecté à une machine) ou 'hq' (mis au travail à l'entrepôt) ; lvl : niveau (index) où le métier se débloque
 export const DROIDS = {
   ouvrier: { name: 'Ouvrier', color: [0.95, 0.70, 0.15], css: '#f2b326', work: 'machine', desc: 'Fait tourner une machine à la place d’un humain.' },
-  logistique: { name: 'Agent logistique', color: [0.25, 0.60, 1.0], css: '#3f99ff', kit: 'k_scanner', lvl: 1, work: 'hq', desc: 'Apporte les matières premières aux machines et range la production à l’entrepôt.' },
-  maintenance: { name: 'Agent de maintenance', color: [0.30, 0.85, 0.45], css: '#4cd975', kit: 'k_outils', lvl: 1, work: 'hq', desc: 'Répare tout seul les pannes légères.' },
-  recherche: { name: 'Agent de recherche', color: [0.13, 0.76, 0.70], css: '#22c3b4', kit: 'k_detect', lvl: 2, work: 'hq', desc: 'Fouille le terrain vague et ramène à l’entrepôt la matière qui manque.' },
-  ingenieur: { name: 'Ingénieur', color: [0.70, 0.40, 1.0], css: '#b366ff', kit: 'k_tablette', lvl: 2, work: 'hq', desc: 'Livre les matériaux et monte les nouvelles machines tout seul.' },
-  chefmaint: { name: 'Chef de la maintenance', color: [0.12, 0.56, 0.31], css: '#1f8f4e', kit: 'k_valise', lvl: 4, work: 'hq', desc: 'Répare les pannes lourdes (et légères) tout seul.' },
-  expert: { name: 'Agent logistique expert', color: [0.17, 0.31, 0.84], css: '#2b4fd6', kit: 'k_terminal', lvl: 5, work: 'hq', desc: 'Distribue les pièces fabriquées à la machine qui en aura besoin le plus tôt.' },
-  qualite: { name: 'Agent qualité', color: [0.95, 0.95, 0.95], css: '#f2f2f2', kit: 'k_lecteur', lvl: 6, work: 'machine', only: 'qualite', desc: 'Fait tourner le poste qualité et divise les rebuts par deux.' },
-  production: { name: 'Agent de production', color: [1.0, 0.48, 0.10], css: '#ff7a1a', kit: 'k_bras', lvl: 7, work: 'machine', desc: 'Fait tourner deux machines à la fois.' },
-  process: { name: 'Ingénieur process', color: [0.36, 0.29, 0.85], css: '#5b4bd8', kit: 'k_flux', lvl: 7, work: 'hq', desc: 'Optimise les flux : +15 % de cadence sur toute l’usine.' },
-  achat: { name: 'Agent d’achat packaging', color: [1.0, 0.44, 0.69], css: '#ff6fb1', kit: 'k_achat', lvl: 8, work: 'hq', desc: 'Commande les cartons : contre 1 plastique, il en livre 3 à l’emballeuse.' },
-  adjoint: { name: 'Adjoint de production', color: [0.78, 0.81, 0.84], css: '#c7ced6', kit: 'k_planning', lvl: 9, work: 'hq', desc: 'Place tout seul les ouvriers libres sur les machines sans opérateur.' },
-  chef: { name: 'Chef de production', color: [0.95, 0.76, 0.31], css: '#f2c14e', kit: 'k_pilotage', lvl: 9, work: 'hq', desc: 'Pilote l’usine : +25 % de cadence et lance les droïdes à livrer quand des commandes attendent.' },
+  logistique: { name: 'Agent logistique', color: [0.25, 0.60, 1.0], css: '#3f99ff', kit: 'k_scanner', lvl: 2, work: 'hq', desc: 'Apporte les matières premières aux machines et range la production.' },
+  maintenance: { name: 'Agent de maintenance', color: [0.30, 0.85, 0.45], css: '#4cd975', kit: 'k_outils', lvl: 2, work: 'hq', desc: 'Répare tout seul les pannes légères.' },
+  recherche: { name: 'Agent de recherche', color: [0.13, 0.76, 0.70], css: '#22c3b4', kit: 'k_detect', lvl: 6, work: 'hq', desc: 'Fouille le terrain vague et ramène à l’entrepôt la matière qui manque.' },
+  ingenieur: { name: 'Ingénieur', color: [0.70, 0.40, 1.0], css: '#b366ff', kit: 'k_tablette', lvl: 6, work: 'hq', desc: 'Livre les matériaux et monte les nouvelles machines tout seul.' },
+  chefmaint: { name: 'Chef de la maintenance', color: [0.12, 0.56, 0.31], css: '#1f8f4e', kit: 'k_valise', lvl: 8, work: 'hq', desc: 'Répare les pannes lourdes (et légères) tout seul.' },
+  expert: { name: 'Agent logistique expert', color: [0.17, 0.31, 0.84], css: '#2b4fd6', kit: 'k_terminal', lvl: 10, work: 'hq', desc: 'Distribue les pièces fabriquées à la machine qui en aura besoin le plus tôt.' },
+  qualite: { name: 'Responsable qualité', color: [0.95, 0.95, 0.95], css: '#f2f2f2', kit: 'k_lecteur', lvl: 12, work: 'machine', only: 'qualite', desc: 'Tient le poste de contrôle : 1 rebut sur 3 déclassées au lieu de 1 sur 2.' },
+  adjq: { name: 'Adjoint qualité', color: [0.89, 0.27, 0.25], css: '#e2463f', kit: 'k_chariot', lvl: 13, work: 'hq', desc: 'Amène les déclassées au contrôle, les rebuts au recycleur et les bonnes pièces à l’entrepôt.' },
+  production: { name: 'Agent de production', color: [1.0, 0.48, 0.10], css: '#ff7a1a', kit: 'k_bras', lvl: 15, work: 'machine', desc: 'Fait tourner deux machines à la fois.' },
+  process: { name: 'Ingénieur process', color: [0.36, 0.29, 0.85], css: '#5b4bd8', kit: 'k_flux', lvl: 15, work: 'hq', desc: 'Optimise les flux : +15 % de cadence sur toute l’usine.' },
+  achat: { name: 'Agent d’achat packaging', color: [1.0, 0.44, 0.69], css: '#ff6fb1', kit: 'k_achat', lvl: 17, work: 'hq', desc: 'Commande les cartons : contre 1 plastique, il en livre 3 à l’emballeuse.' },
+  adjoint: { name: 'Adjoint de production', color: [0.78, 0.81, 0.84], css: '#c7ced6', kit: 'k_planning', lvl: 19, work: 'hq', desc: 'Place tout seul les ouvriers libres sur les machines sans opérateur.' },
+  chef: { name: 'Chef de production', color: [0.95, 0.76, 0.31], css: '#f2c14e', kit: 'k_pilotage', lvl: 19, work: 'hq', desc: 'Pilote l’usine : +25 % de cadence et lance les droïdes à livrer quand des commandes attendent.' },
 };
-export const SPEC_ORDER = ['logistique', 'maintenance', 'recherche', 'ingenieur', 'chefmaint', 'expert', 'qualite', 'production', 'process', 'achat', 'adjoint', 'chef'];
+export const SPEC_ORDER = ['logistique', 'maintenance', 'recherche', 'ingenieur', 'chefmaint', 'expert', 'qualite', 'adjq', 'production', 'process', 'achat', 'adjoint', 'chef'];
 
-// Tenues achetées avec les crédits
+// ---------- tenues : elles se cumulent, une par emplacement ----------
+export const SLOTS = { tete: 'Tête', corps: 'Corps', cou: 'Cou', peinture: 'Peinture' };
 export const OUTFITS = {
-  casquette: { name: 'Casquette', price: 15 },
-  casque: { name: 'Casque de chantier', price: 20 },
-  tablier: { name: 'Tablier de cuir', price: 25 },
-  gilet: { name: 'Gilet haute visibilité', price: 30 },
-  noeud: { name: 'Nœud papillon', price: 40 },
-  chrome: { name: 'Peinture chromée', price: 60 },
-  or: { name: 'Peinture dorée', price: 100 },
+  casquette: { name: 'Casquette', slot: 'tete', price: 40 },
+  tablier: { name: 'Tablier', slot: 'corps', price: 45 },
+  casque: { name: 'Casque de chantier', slot: 'tete', price: 55 },
+  gilet: { name: 'Gilet', slot: 'corps', price: 60 },
+  noeud: { name: 'Nœud papillon', slot: 'cou', price: 75 },
+  chrome: { name: 'Peinture chromée', slot: 'peinture', price: 120 },
+  or: { name: 'Peinture dorée', slot: 'peinture', price: 200 },
 };
-export const CREDITS = { goal: 10, level: 30 };
+// « L'intégrale » : les 5 vêtements d'un métier (sans les peintures), à partir du niveau 10
+export const PACK = { name: 'L’intégrale', items: ['casquette', 'tablier', 'casque', 'gilet', 'noeud'], price: 205, lvl: 9 };
+// Couleurs et style de chaque métier : casquette, casque, tablier, gilet (+ bandes), nœud
+export const LOOKS = {
+  logistique: { casquette: '#2f6fe0', casque: '#2f6fe0', tablier: '#6b7380', gilet: '#ff8a1f', bande: '#2f6fe0', noeud: '#2f6fe0', style: 'gilet orange fluo à bandes bleues' },
+  maintenance: { casquette: '#2fae55', casque: '#2fae55', tablier: '#7a4a25', gilet: '#2fae55', bande: '#f5c400', noeud: '#2fae55', style: 'casquette de mécano, tablier en cuir' },
+  recherche: { casquette: '#7d7f45', casque: '#d8c08a', tablier: '#d8c08a', gilet: '#7d7f45', bande: '#22c3b4', noeud: '#22c3b4', style: 'tenue d’explorateur' },
+  ingenieur: { casquette: '#8a4be0', casque: '#f2f2f2', tablier: '#f2f2f2', gilet: '#8a4be0', bande: '#f2f2f2', noeud: '#8a4be0', style: 'blouse blanche et violet' },
+  chefmaint: { casquette: '#1f6f3e', casque: '#1f6f3e', tablier: '#2a2a2a', gilet: '#1f6f3e', bande: '#f5c400', noeud: '#f5c400', style: 'vert sombre et jaune' },
+  expert: { casquette: '#1d2f7a', casque: '#1d2f7a', tablier: '#6b7380', gilet: '#e6ff2a', bande: '#1d2f7a', noeud: '#1d2f7a', style: 'gilet jaune fluo, bleu nuit' },
+  qualite: { casquette: '#f5f5f5', casque: '#f5f5f5', tablier: '#f5f5f5', gilet: '#f5f5f5', bande: '#e23b3b', noeud: '#e23b3b', style: 'tout en blanc, liseré rouge' },
+  adjq: { casquette: '#e2463f', casque: '#f5f5f5', tablier: '#cfd4da', gilet: '#e2463f', bande: '#f5f5f5', noeud: '#f5f5f5', style: 'rouge et blanc' },
+  production: { casquette: '#ff7a1a', casque: '#ff7a1a', tablier: '#7a4a25', gilet: '#ff7a1a', bande: '#1a1a1a', noeud: '#1a1a1a', style: 'orange et noir' },
+  process: { casquette: '#4b3fc4', casque: '#4b3fc4', tablier: '#f2f2f2', gilet: '#4b3fc4', bande: '#c0c7d0', noeud: '#c0c7d0', style: 'indigo et argent' },
+  achat: { casquette: '#ff6fb1', casque: '#ff6fb1', tablier: '#f7c6dc', gilet: '#ff6fb1', bande: '#f5f5f5', noeud: '#ff6fb1', style: 'rose bonbon' },
+  adjoint: { casquette: '#8d99a6', casque: '#8d99a6', tablier: '#5f6873', gilet: '#8d99a6', bande: '#1d2f7a', noeud: '#1d2f7a', style: 'gris acier et bleu marine' },
+  chef: { casquette: '#e8b923', casque: '#e8b923', tablier: '#1a1a1a', gilet: '#1a1a1a', bande: '#e8b923', noeud: '#d42a2a', style: 'noir et or, nœud rouge' },
+};
+// Crédits : objectifs, niveaux, et en faisant tourner l'usine
+export const CREDITS = { goal: 10, level: 30, droid: 2, ctrl: 1, repair: 3, heavy: 6, creature: 5 };
 
 // Créatures du terrain vague (inventées) : capturées à deux, elles boostent une machine pour toujours.
 export const ANIMALS = {
@@ -221,6 +279,8 @@ export const ANIMALS = {
 };
 export const ANIMAL_COUNT = 6;
 
+// ---------- 20 niveaux : une nouveauté, puis du rodage ----------
+// c : [sorte, n] — sortes suivies d'un « + » : compté pendant le niveau seulement
 export const LEVELS = [
   { name: 'À mains nues', goals: [
     { id: 'forge', text: 'Construire la forge' },
@@ -229,62 +289,108 @@ export const LEVELS = [
     { id: 'assembleur', text: 'Construire l’assembleur de droïdes' },
     { id: 'droid1', text: 'Produire le premier droïde' },
   ] },
-  { name: 'Premiers employés', goals: [
-    { id: 'assign2', text: 'Affecter 2 droïdes ouvriers à des machines' },
-    { id: 'atelier', text: 'Construire l’atelier de spécialisation' },
-    { id: 'maintenance', text: 'Former un agent de maintenance (boîte à outils : forge)' },
-    { id: 'logistique', text: 'Former un agent logistique (scanner : atelier de circuits)' },
-    { id: 'animal', text: 'Capturer une créature à deux et l’installer sur une machine' },
+  { name: 'Premières séries', rodage: true, goals: [
+    { id: 'r2a', text: 'Produire 3 droïdes', c: ['made+', 3] },
+    { id: 'r2b', text: 'Avoir 2 droïdes au travail', c: ['work', 2] },
+    { id: 'r2c', text: 'Gagner 25 crédits', c: ['earn+', 25] },
   ] },
-  { name: 'Les éclaireurs', goals: [
-    { id: 'recherche', text: 'Former un agent de recherche (détecteur)' },
-    { id: 'trefileuse', text: 'Construire la tréfileuse' },
-    { id: 'fil4', text: 'Produire 4 fils de cuivre' },
-    { id: 'ingenieur', text: 'Former un ingénieur (tablette de plans)' },
+  { name: 'Premiers employés', goals: [
+    { id: 'etabli', text: 'Construire l’établi des kits' },
+    { id: 'atelier', text: 'Construire l’atelier de spécialisation' },
+    { id: 'maintenance', text: 'Former un agent de maintenance (boîte à outils)' },
+    { id: 'logistique', text: 'Former un agent logistique (scanner de stock)' },
+  ] },
+  { name: 'Terre cuite', goals: [
+    { id: 'ceramique', text: 'Construire le four à céramique' },
+    { id: 'r4a', text: 'Produire 4 isolants céramiques', c: ['item+', 4, 'isolant'] },
+    { id: 'r4b', text: 'Installer une créature sur une machine', c: ['crea', 1] },
+    { id: 'r4c', text: 'Réparer 2 pannes', c: ['rep+', 2] },
   ] },
   { name: 'Le courant', goals: [
     { id: 'generateur', text: 'Construire le générateur avant la fin de la batterie' },
-    { id: 'fuel', text: 'Alimenter le générateur en charbon ou en bois' },
+    { id: 'fuel', text: 'Charger le générateur en charbon ou en bois' },
     { id: 'heavy', text: 'Réparer une panne lourde (à deux)' },
-    { id: 'droids6', text: 'Avoir 6 droïdes dans l’usine' },
+  ] },
+  { name: 'Sous tension', rodage: true, goals: [
+    { id: 'r6a', text: 'Produire 4 droïdes', c: ['made+', 4] },
+    { id: 'r6b', text: 'Avoir 4 droïdes au travail', c: ['work', 4] },
+    { id: 'r6c', text: 'Gagner 35 crédits', c: ['earn+', 35] },
+  ] },
+  { name: 'Les éclaireurs', goals: [
+    { id: 'trefileuse', text: 'Construire la tréfileuse' },
+    { id: 'r7a', text: 'Produire 4 fils de cuivre', c: ['item+', 4, 'fil'] },
+    { id: 'recherche', text: 'Former un agent de recherche (détecteur)' },
+    { id: 'ingenieur', text: 'Former un ingénieur (tablette de plans)' },
+  ] },
+  { name: 'Nouveaux circuits', rodage: true, goals: [
+    { id: 'r8a', text: 'Produire 6 circuits', c: ['item+', 6, 'circuit'] },
+    { id: 'r8b', text: 'Avoir 8 droïdes dans l’usine', c: ['droids', 8] },
+    { id: 'r8c', text: 'Réparer 3 pannes', c: ['rep+', 3] },
   ] },
   { name: 'Métallurgie', goals: [
     { id: 'fonderie', text: 'Construire la fonderie' },
     { id: 'laminoir', text: 'Construire le laminoir' },
-    { id: 'tole4', text: 'Produire 4 tôles' },
+    { id: 'r9a', text: 'Produire 4 tôles', c: ['item+', 4, 'tole'] },
     { id: 'chefmaint', text: 'Former un chef de la maintenance (valise d’expert)' },
+  ] },
+  { name: 'La cadence', rodage: true, goals: [
+    { id: 'r10a', text: 'Produire 5 droïdes', c: ['made+', 5] },
+    { id: 'r10b', text: 'Avoir 6 droïdes au travail', c: ['work', 6] },
+    { id: 'r10c', text: 'Gagner 45 crédits', c: ['earn+', 45] },
   ] },
   { name: 'Deux lignes', goals: [
     { id: 'forge2', text: 'Construire une deuxième forge' },
     { id: 'circuits2', text: 'Construire un deuxième atelier de circuits' },
     { id: 'expert', text: 'Former un agent logistique expert' },
-    { id: 'made10', text: 'Produire 10 droïdes au total' },
+  ] },
+  { name: 'La grande série', rodage: true, goals: [
+    { id: 'r12a', text: 'Produire 6 droïdes', c: ['made+', 6] },
+    { id: 'r12b', text: 'Avoir 3 créatures installées', c: ['crea', 3] },
+    { id: 'r12c', text: 'Réparer 4 pannes', c: ['rep+', 4] },
   ] },
   { name: 'Qualité', goals: [
     { id: 'qualite', text: 'Construire le poste de contrôle qualité' },
-    { id: 'ctrl6', text: 'Contrôler 6 pièces' },
+    { id: 'zone', text: 'Construire la zone des déclassés' },
+    { id: 'r13a', text: 'Contrôler 6 pièces déclassées', c: ['ctrl+', 6] },
+    { id: 'qualiteD', text: 'Former un responsable qualité' },
+  ] },
+  { name: 'Recyclage', goals: [
     { id: 'recycleur', text: 'Construire le recycleur' },
-    { id: 'recyc2', text: 'Recycler 2 rebuts' },
-    { id: 'qualiteD', text: 'Former un agent qualité' },
+    { id: 'r14a', text: 'Recycler 2 rebuts', c: ['recyc+', 2] },
+    { id: 'adjq', text: 'Former un adjoint qualité (chariot de tri)' },
+  ] },
+  { name: 'Zéro défaut', rodage: true, goals: [
+    { id: 'r15a', text: 'Contrôler 12 pièces déclassées', c: ['ctrl+', 12] },
+    { id: 'r15b', text: 'Avoir 10 droïdes au travail', c: ['work', 10] },
+    { id: 'r15c', text: 'Gagner 60 crédits', c: ['earn+', 60] },
   ] },
   { name: 'Électronique', goals: [
     { id: 'four', text: 'Construire le four à verre' },
-    { id: 'silicium2', text: 'Produire 2 plaques de silicium' },
-    { id: 'circuitA1', text: 'Produire un circuit avancé' },
+    { id: 'r16a', text: 'Produire un circuit avancé', c: ['item+', 1, 'circuitA'] },
     { id: 'production', text: 'Former un agent de production' },
     { id: 'process', text: 'Former un ingénieur process' },
+  ] },
+  { name: 'Haute technologie', rodage: true, goals: [
+    { id: 'r17a', text: 'Produire 6 droïdes', c: ['made+', 6] },
+    { id: 'r17b', text: 'Avoir 4 créatures installées', c: ['crea', 4] },
+    { id: 'r17c', text: 'Réparer 5 pannes', c: ['rep+', 5] },
   ] },
   { name: 'Expédition', goals: [
     { id: 'emballeuse', text: 'Construire l’emballeuse' },
     { id: 'quai', text: 'Construire le quai d’expédition' },
     { id: 'achat', text: 'Former un agent d’achat packaging' },
-    { id: 'orders3', text: 'Livrer 3 commandes' },
+    { id: 'r18a', text: 'Livrer 3 commandes', c: ['orders+', 3] },
+  ] },
+  { name: 'Clients fidèles', rodage: true, goals: [
+    { id: 'r19a', text: 'Livrer 4 commandes', c: ['orders+', 4] },
+    { id: 'r19b', text: 'Avoir 12 droïdes au travail', c: ['work', 12] },
+    { id: 'r19c', text: 'Gagner 150 crédits', c: ['earn+', 150] },
   ] },
   { name: 'La grande usine', goals: [
     { id: 'adjoint', text: 'Former un adjoint de production' },
     { id: 'chef', text: 'Former un chef de production' },
-    { id: 'droids15', text: 'Avoir 15 droïdes dans l’usine' },
-    { id: 'orders8', text: 'Livrer 8 commandes au total' },
+    { id: 'r20a', text: 'Avoir 15 droïdes dans l’usine', c: ['droids', 15] },
+    { id: 'r20b', text: 'Livrer 5 commandes', c: ['orders+', 5] },
   ] },
 ];
 

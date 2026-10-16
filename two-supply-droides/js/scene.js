@@ -205,15 +205,35 @@ export function updateScene(S, st, view) {
       if (a.jaw) a.jaw.pos[1] = 1.15 + (run ? Math.abs(Math.sin(view.time * 8)) * 0.15 : 0);
       if (a.box) a.box.pos[0] = run ? -1.2 + ((view.time * 0.6) % 1) * 2.4 : -0.6;
       if (a.parm) a.parm.rot[1] = run ? Math.sin(view.time * 3) * 0.6 : 0;
+      if (a.tool) a.tool.rot[0] = run ? -0.6 + Math.abs(Math.sin(view.time * 7)) * 0.9 : 0;
+      if (a.piles) {
+        const sig = JSON.stringify(m.inp);
+        if (a.piles.sig !== sig) {
+          a.piles.sig = sig;
+          a.piles.children = [];
+          let i = 0;
+          for (const it of ITEM_ORDER) {
+            const n = m.inp[it] || 0;
+            if (!n || i >= 6) continue;
+            const pile = itemPile(it, n);
+            pile.pos = [-0.9 + (i % 3) * 0.95, 0, -0.45 + Math.floor(i / 3) * 0.8];
+            a.piles.add(pile);
+            i++;
+          }
+        }
+      }
+      // Surchauffe du générateur : il rougeoie et fume noir pendant la pause obligatoire
+      const hot = m.type === 'generateur' && st.gen && st.gen.lockUntil > Date.now();
       const lamp = a.lamp.mesh.mat;
-      if (m.broken) { const b = Math.sin(view.time * 10) > 0 ? 1 : 0.2; lamp.color = [0.8, 0.1, 0.05]; lamp.emissive = [b, 0.05, 0.02]; }
+      if (m.broken || hot) { const b = Math.sin(view.time * 10) > 0 ? 1 : 0.2; lamp.color = [0.8, 0.1, 0.05]; lamp.emissive = [b, 0.05, 0.02]; }
       else if (run) { lamp.color = [0.2, 0.8, 0.3]; lamp.emissive = [0.15, 0.9, 0.25]; }
       else if (m.nopower) { const b = Math.sin(view.time * 4) > 0 ? 0.7 : 0.1; lamp.color = [0.3, 0.4, 0.9]; lamp.emissive = [0.1, 0.2, b]; }
       else { lamp.color = [0.8, 0.6, 0.1]; lamp.emissive = [0.6, 0.4, 0.05]; }
-      a.smoke.visible = m.broken;
-      if (m.broken) a.smoke.children.forEach((s, i) => {
-        s.mesh.mat.color = m.broken === 'heavy' ? [0.12, 0.12, 0.12] : [0.35, 0.35, 0.35];
-        const t = (view.time * (m.broken === 'heavy' ? 0.9 : 0.6) + i / 4) % 1;
+      if (hot && a.tip) a.tip.mesh.mat.emissive = [1.0, 0.2 + 0.1 * Math.sin(view.time * 20), 0.02];
+      a.smoke.visible = !!(m.broken || hot);
+      if (m.broken || hot) a.smoke.children.forEach((s, i) => {
+        s.mesh.mat.color = m.broken === 'heavy' || hot ? [0.12, 0.12, 0.12] : [0.35, 0.35, 0.35];
+        const t = (view.time * (m.broken === 'heavy' || hot ? 0.9 : 0.6) + i / 4) % 1;
         s.pos = [Math.sin(i * 2 + view.time) * 0.3, t * 2.2, Math.cos(i * 3) * 0.3];
         const sc = 0.6 + t * 1.4; s.scl = [sc, sc, sc];
         s.mesh.mat.opacity = 0.5 * (1 - t);
@@ -246,8 +266,9 @@ export function updateScene(S, st, view) {
     let m = S.droids.get(d.id);
     if (!m) { m = droidModel(); S.root.add(m); S.droids.set(d.id, m); S.targets['droid' + d.id] = m; }
     if (m.type !== d.type) { m.setType(d.type); m.type = d.type; m.outfitK = undefined; }
-    const ofit = (st.wardrobe && st.wardrobe.wear[d.type]) || null;
-    if (m.outfitK !== ofit) { m.setOutfit(ofit); m.outfitK = ofit; }
+    const wear = (st.wardrobe && st.wardrobe.wear[d.type]) || null;
+    const ofit = d.type + JSON.stringify(wear);
+    if (m.outfitK !== ofit) { m.setOutfit(d.type, wear); m.outfitK = ofit; }
     m.visible = d.st !== 'spec';
     place(m, d.x, d.z, d.rot, k);
     const v = speedOf(m, view.dt);

@@ -1,6 +1,6 @@
 // Modèles 3D procéduraux : terrain vague, débris, ruines, machines, humains, droïdes, créatures.
 import { Node, mesh, meshes, mat, bake, box, cylinder, sphere, torus, plane, ring, lump, terrain, P } from './gl.js';
-import { WORLD, SLAB, NODE_TYPES, MACHINES, ENTREPOT, CORE, DROIDS, PLAYER_COLORS, ITEMS } from './config.js';
+import { WORLD, SLAB, NODE_TYPES, MACHINES, ENTREPOT, CORE, DROIDS, PLAYER_COLORS, ITEMS, LOOKS } from './config.js';
 import { height, noise, rng, NODES, PROPS, RUINS, POND } from './world.js';
 
 export const C = {
@@ -416,6 +416,53 @@ export function machineModel(type) {
     for (let k = 0; k < 4; k++) stack.push({ g: B(0.7, 0.05, 0.5), p: [1.2, 0.1 + k * 0.06, -0.6], c: [0.72, 0.56, 0.36] });
     root.add(meshes(bake(stack), mat([1, 1, 1], { pattern: P.wood })));
     anim.box = box1; anim.parm = arm;
+  } else if (type === 'etabli') {
+    // Établi en bois, panneau à outils, étau et kits colorés
+    const wood = mat(C.wood, { pattern: P.wood });
+    root.add(mesh(B(2.8, 0.12, 1.3), wood).at(0, 0.88, 0.1));
+    for (const [x, z] of [[-1.25, -0.4], [1.25, -0.4], [-1.25, 0.6], [1.25, 0.6]]) root.add(mesh(B(0.12, 0.85, 0.12, 0.05), wood).at(x, 0, z));
+    root.add(mesh(B(2.6, 0.08, 1.1), wood).at(0, 0.3, 0.1));
+    root.add(mesh(B(2.9, 1.4, 0.08, 0.95), mat([0.36, 0.38, 0.42], { pattern: P.paint })).at(0, 0, -0.55));
+    for (let k = 0; k < 6; k++) root.add(mesh(B(0.06, 0.32 + (k % 3) * 0.08, 0.05), mat(C.steel)).at(-1.15 + k * 0.22, 1.6, -0.48));
+    root.add(mesh(B(0.3, 0.22, 0.25), mat(C.dark, { pattern: P.paint })).at(0.9, 0.95, 0.35));
+    const kitCols = ['#e04a3a', '#3f99ff', '#22c3b4', '#b366ff'];
+    for (let k = 0; k < 4; k++) root.add(mesh(B(0.32, 0.22, 0.24), mat(hexRgb(kitCols[k]), { pattern: P.paint })).at(-0.9 + (k % 2) * 0.38, 0.32 + 0.1 + Math.floor(k / 2) * 0.24, 0.25));
+    const tool = new Node().at(0.1, 1.45, 0.15);
+    tool.add(mesh(B(0.06, 0.5, 0.06, -0.5), mat(C.steel, { rough: 0.3 })));
+    tool.add(mesh(B(0.22, 0.1, 0.1), mat([0.8, 0.2, 0.15], { pattern: P.paint })).at(0, -0.52, 0));
+    root.add(tool);
+    anim.tool = tool;
+  } else if (type === 'ceramique') {
+    // Four à céramique : base en briques, cloche en terre cuite, hublot qui rougeoie
+    root.add(mesh(B(2.5, 0.45, 1.9, 0.1), mat(C.clay, { pattern: P.clay })));
+    const kiln = mesh(CY(0.85, 0.95, 1.4, 18), mat([0.72, 0.42, 0.28], { pattern: P.clay }));
+    kiln.pos = [-0.2, 0.55, -0.05];
+    root.add(kiln);
+    const top = mesh(SP(0.86, 16, 8), mat([0.66, 0.38, 0.26], { pattern: P.clay }));
+    top.pos = [-0.2, 1.95, -0.05]; top.scl = [1, 0.45, 1];
+    root.add(top);
+    root.add(mesh(CY(0.14, 0.17, 1.1, 10), mat(C.rustMetal, { pattern: P.rust })).at(-0.2, 2.2, -0.05));
+    const glow = mesh(B(0.5, 0.36, 0.05), mat([0.2, 0.06, 0.02], { emissive: [0.1, 0.02, 0] }));
+    glow.pos = [-0.2, 1.15, 0.86];
+    root.add(glow);
+    for (let k = 0; k < 3; k++) root.add(mesh(CY(0.11, 0.11, 0.26, 12), mat([0.93, 0.95, 0.97], { pattern: P.paint, rough: 0.2 })).at(0.85, 0.58 + k * 0.27, 0.45));
+    root.add(mesh(B(0.6, 0.35, 0.45), mat(C.clay, { pattern: P.clay })).at(0.85, 0.12, -0.45));
+    anim.mouth = glow;
+  } else if (type === 'zone') {
+    // Zone des déclassés : sol hachuré, barrières, panneau « ? »
+    root.add(mesh(B(3.4, 0.04, 2.0), mat([1, 1, 1], { pattern: P.hazard, cast: false })).at(0, 0.1, 0));
+    root.add(mesh(B(3.0, 0.05, 1.6), mat([0.32, 0.33, 0.35], { pattern: P.concrete, cast: false })).at(0, 0.13, 0));
+    const rail = mat([0.95, 0.75, 0.1], { pattern: P.paint });
+    for (const x of [-1.6, 1.6]) { root.add(mesh(B(0.08, 0.9, 0.08, 0.1), rail).at(x, 0, -0.95)); root.add(mesh(B(0.08, 0.9, 0.08, 0.1), rail).at(x, 0, 0.95)); }
+    root.add(mesh(B(3.3, 0.07, 0.07), rail).at(0, 0.9, -0.95));
+    root.add(mesh(B(0.07, 0.07, 1.95), rail).at(-1.6, 0.9, 0));
+    root.add(mesh(B(0.07, 0.07, 1.95), rail).at(1.6, 0.9, 0));
+    root.add(mesh(B(0.1, 1.9, 0.1, 0.1), mat(C.steel)).at(1.4, 0, -0.95));
+    root.add(mesh(B(0.7, 0.5, 0.05), mat([0.96, 0.75, 0.06], { pattern: P.paint })).at(1.4, 1.75, -0.92));
+    root.add(mesh(B(0.12, 0.26, 0.06), mat([0.08, 0.08, 0.08])).at(1.4, 1.8, -0.88));
+    const piles = new Node().at(-0.4, 0.15, 0);
+    root.add(piles);
+    anim.piles = piles;
   } else if (type === 'quai') {
     root.add(mesh(B(3.8, 0.6, 2.0, 0.1), mat([0.48, 0.4, 0.3], { pattern: P.wood })));
     root.add(mesh(B(1.8, 2.0, 1.8, 0.7), mat([0.25, 0.4, 0.6], { pattern: P.paint })).at(0.8, 0, -0.05));
@@ -467,14 +514,21 @@ export function plotModel(type) {
 }
 
 const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+const PILE_MATS = {};
 export function itemPile(item, n) {
   const def = ITEMS[item];
+  const c = Math.min(n, 6);
+  if (!c) return new Node();
   const col = hexRgb(def.css);
-  const pat = { fer: P.paint, verre: P.glass, argile: P.clay, calcaire: P.rock, sable: P.ground, charbon: P.rock, bois: P.wood, caoutchouc: P.rubber }[item] ?? (def.kind === 'kit' ? P.paint : P.plain);
-  const parts = [];
-  for (let k = 0; k < Math.min(n, 6); k++) parts.push({ g: B(0.28, 0.2, 0.28), p: [(k % 3) * 0.32 - 0.32, Math.floor(k / 3) * 0.21, 0], r: [0, k * 0.3, 0], c: col });
-  if (!parts.length) return new Node();
-  return meshes(bake(parts), mat([1, 1, 1], { pattern: pat, opacity: item === 'verre' ? 0.7 : 1 }));
+  const base = def.base || item;
+  const pat = { fer: P.paint, verre: P.glass, argile: P.clay, calcaire: P.rock, sable: P.ground, charbon: P.rock, bois: P.wood, caoutchouc: P.rubber }[base] ?? (def.kind === 'kit' ? P.paint : P.plain);
+  const chunks = geo(`pile${item}|${c}`, () => {
+    const parts = [];
+    for (let k = 0; k < c; k++) parts.push({ g: B(0.28, 0.2, 0.28), p: [(k % 3) * 0.32 - 0.32, Math.floor(k / 3) * 0.21, 0], r: [0, k * 0.3, 0], c: def.kind === 'rebut' ? col.map((v) => v * 0.45) : col });
+    return bake(parts);
+  });
+  const m = PILE_MATS[item] || (PILE_MATS[item] = mat([1, 1, 1], { pattern: pat, opacity: base === 'verre' ? 0.7 : 1 }));
+  return meshes(chunks, m);
 }
 
 export function entrepotModel() {
@@ -602,16 +656,24 @@ export function droidModel() {
     achat: new Node().add(mesh(B(0.32, 0.26, 0.26), mat([0.78, 0.6, 0.38], { pattern: P.wood })).at(0.34, -0.15, 0.12), mesh(B(0.2, 0.12, 0.02), mat([0.9, 0.4, 0.6], { emissive: [0.4, 0.1, 0.25] })).at(-0.3, -0.2, 0.25)),
     adjoint: new Node().add(mesh(B(0.24, 0.32, 0.02), mat([0.5, 0.38, 0.25], { pattern: P.wood })).at(-0.3, -0.15, 0.25), mesh(B(0.2, 0.24, 0.01), mat([0.95, 0.95, 0.92])).at(-0.3, -0.15, 0.265)),
     chef: new Node().add(mesh(CY(0.17, 0.2, 0.16, 14), mat([0.12, 0.12, 0.15], { pattern: P.paint })).at(0, 0.9, 0), mesh(CY(0.205, 0.205, 0.04, 14), mat([0.95, 0.75, 0.25], { rough: 0.2 })).at(0, 0.92, 0), mesh(SP(0.05, 8, 6), mat([0.95, 0.75, 0.25], { emissive: [0.4, 0.3, 0.05] })).at(0.12, 0.45, 0.25)),
+    adjq: new Node().add(mesh(B(0.44, 0.3, 0.32), mat([0.88, 0.27, 0.24], { pattern: P.paint })).at(0, 0.15, -0.4), mesh(B(0.46, 0.06, 0.34), mat([1, 1, 1], { pattern: P.hazard })).at(0, 0.33, -0.4), mesh(B(0.2, 0.26, 0.02), mat([0.95, 0.95, 0.92])).at(-0.3, -0.15, 0.26)),
   };
+  // Parties de l'accessoire qui sont un chapeau (cachées sous une casquette ou un casque)
+  const hats = { chefmaint: [1], chef: [0, 1], ingenieur: [1] };
   acc.ouvrier.pos = [0, 0.9, 0];
   for (const k of Object.keys(acc)) { acc[k].visible = false; body.add(acc[k]); }
-  // Tenues achetées avec les crédits
+  // Tenues achetées avec les crédits : elles se cumulent (une par emplacement), aux couleurs du métier
+  const om = {
+    casquette: mat([0.85, 0.2, 0.2], { pattern: P.paint }), casque: mat([0.98, 0.8, 0.1], { pattern: P.paint, rough: 0.3 }),
+    tablier: mat([0.45, 0.28, 0.16], { pattern: P.paint, rough: 0.7 }), gilet: mat([1.0, 0.45, 0.05], { pattern: P.paint }),
+    bande: mat([0.9, 0.9, 0.85], { emissive: [0.35, 0.35, 0.3] }), noeud: mat([0.75, 0.05, 0.1], { pattern: P.paint }),
+  };
   const outfit = {
-    casquette: new Node().add(mesh(SP(0.2, 12, 6), mat([0.85, 0.2, 0.2], { pattern: P.paint })).at(0, 0.86, 0), mesh(B(0.26, 0.03, 0.18), mat([0.85, 0.2, 0.2], { pattern: P.paint })).at(0, 0.86, 0.2)),
-    casque: new Node().add(mesh(SP(0.23, 12, 6), mat([0.98, 0.8, 0.1], { pattern: P.paint, rough: 0.3 })).at(0, 0.86, 0), mesh(CY(0.3, 0.3, 0.03, 16), mat([0.98, 0.8, 0.1], { pattern: P.paint })).at(0, 0.86, 0)),
-    tablier: new Node().add(mesh(B(0.44, 0.52, 0.03), mat([0.45, 0.28, 0.16], { pattern: P.wood, rough: 0.7 })).at(0, 0.05, 0.27)),
-    gilet: new Node().add(mesh(B(0.64, 0.42, 0.52), mat([1.0, 0.45, 0.05], { pattern: P.paint })).at(0, 0.12, 0), mesh(B(0.65, 0.05, 0.53), mat([0.9, 0.9, 0.85], { emissive: [0.5, 0.5, 0.45] })).at(0, 0.32, 0), mesh(B(0.65, 0.05, 0.53), mat([0.9, 0.9, 0.85], { emissive: [0.5, 0.5, 0.45] })).at(0, 0.2, 0)),
-    noeud: new Node().add(mesh(B(0.1, 0.08, 0.04), mat([0.75, 0.05, 0.1], { pattern: P.paint })).at(-0.06, 0.6, 0.22), mesh(B(0.1, 0.08, 0.04), mat([0.75, 0.05, 0.1], { pattern: P.paint })).at(0.06, 0.6, 0.22), mesh(SP(0.03, 6, 4), mat([0.6, 0.05, 0.08])).at(0, 0.6, 0.25)),
+    casquette: new Node().add(mesh(SP(0.2, 12, 6), om.casquette).at(0, 0.86, 0), mesh(B(0.26, 0.03, 0.18), om.casquette).at(0, 0.86, 0.2)),
+    casque: new Node().add(mesh(SP(0.23, 12, 6), om.casque).at(0, 0.86, 0), mesh(CY(0.3, 0.3, 0.03, 16), om.casque).at(0, 0.86, 0), mesh(B(0.05, 0.1, 0.4), om.bande).at(0, 1.02, 0)),
+    tablier: new Node().add(mesh(B(0.44, 0.52, 0.03), om.tablier).at(0, 0.05, 0.27), mesh(B(0.2, 0.12, 0.02), om.bande).at(0, 0.0, 0.29)),
+    gilet: new Node().add(mesh(B(0.64, 0.42, 0.52), om.gilet).at(0, 0.12, 0), mesh(B(0.65, 0.05, 0.53), om.bande).at(0, 0.32, 0), mesh(B(0.65, 0.05, 0.53), om.bande).at(0, 0.2, 0)),
+    noeud: new Node().add(mesh(B(0.1, 0.08, 0.04), om.noeud).at(-0.06, 0.6, 0.22), mesh(B(0.1, 0.08, 0.04), om.noeud).at(0.06, 0.6, 0.22), mesh(SP(0.03, 6, 4), om.noeud).at(0, 0.6, 0.25)),
   };
   for (const k of Object.keys(outfit)) { outfit[k].visible = false; body.add(outfit[k]); }
   hips.add(body);
@@ -623,11 +685,18 @@ export function droidModel() {
     glow.emissive = d.color.map((v) => v * 0.9);
     for (const k of Object.keys(acc)) acc[k].visible = k === type;
     root.baseColor = d.color;
+    root.type = type;
   };
-  root.setOutfit = (o) => {
-    for (const k of Object.keys(outfit)) outfit[k].visible = k === o;
-    if (o === 'chrome') { paint.color = [0.86, 0.88, 0.92]; paint.rough = 0.12; }
-    else if (o === 'or') { paint.color = [0.98, 0.76, 0.26]; paint.rough = 0.15; }
+  // wear : { tete, corps, cou, peinture }
+  root.setOutfit = (type, wear) => {
+    const w = wear || {};
+    const look = LOOKS[type];
+    if (look) for (const k of ['casquette', 'casque', 'tablier', 'gilet', 'bande', 'noeud']) om[k].color = hexRgb(look[k]);
+    const on = new Set([w.tete, w.corps, w.cou].filter(Boolean));
+    for (const k of Object.keys(outfit)) outfit[k].visible = on.has(k);
+    if (acc[type] && hats[type]) hats[type].forEach((i) => { if (acc[type].children[i]) acc[type].children[i].visible = !w.tete; });
+    if (w.peinture === 'chrome') { paint.color = [0.86, 0.88, 0.92]; paint.rough = 0.12; }
+    else if (w.peinture === 'or') { paint.color = [0.98, 0.76, 0.26]; paint.rough = 0.15; }
     else { paint.color = root.baseColor || paint.color; paint.rough = 0.4; }
   };
   return root;
