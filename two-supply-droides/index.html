@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Two Supply">
 <meta name="theme-color" content="#0e1115">
-<meta name="description" content="Two Supply — Droïdes : version 0.4, usine de droïdes en 20 niveaux dans un terrain vague, en solo ou à deux.">
+<meta name="description" content="Two Supply — Droïdes : version 0.4.1, usine de droïdes en 20 niveaux dans un terrain vague, en solo ou à deux.">
 <title>Two Supply — Droïdes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,6 +17,7 @@
 </head>
 <body>
 <canvas id="gl"></canvas>
+<button id="btn-unzoom" type="button" hidden>Recadrer l’écran<small>ou pince l’écran avec deux doigts</small></button>
 <div id="labels"></div>
 
 <div id="hud" hidden>
@@ -61,6 +62,7 @@
   <div id="toasts"></div>
   <div id="call-flash"></div>
   <div id="call-msg"></div>
+  <div id="save-tick" role="status">Partie sauvegardée ✓</div>
   <label id="haptic-label" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label>
   <div id="banner"></div>
   <div id="edge-arrow"><svg viewBox="0 0 24 24"><path d="M4 12l14-8v16z"/></svg></div>
@@ -72,7 +74,7 @@
     <div class="brand">
       <div class="hazard"></div>
       <h1>TWO<span>SUPPLY</span></h1>
-      <p class="kicker">Droïdes · version 0.4 · 20 niveaux</p>
+      <p class="kicker">Droïdes · version 0.4.1 · 20 niveaux</p>
       <p class="tag">Un terrain vague, des débris, des créatures de ferraille. Construisez à la main l’usine qui fabriquera vos premiers droïdes, puis faites-en vos employés.</p>
     </div>
     <div class="home-actions">
@@ -91,6 +93,19 @@
         <button id="btn-join" class="btn" type="button">Rejoindre</button>
       </div>
       <p id="home-msg" class="msg" role="status"></p>
+    </div>
+  </div>
+</section>
+
+<section id="screen-confirm" class="screen overlay">
+  <div class="panel">
+    <h2>Une partie est déjà sauvegardée</h2>
+    <p class="sub" id="confirm-info"></p>
+    <p class="sub">Une nouvelle partie la remplacera définitivement.</p>
+    <div class="stack">
+      <button id="btn-confirm-resume" class="btn primary" type="button">Reprendre ma partie</button>
+      <button id="btn-confirm-new" class="btn" type="button">Nouvelle partie (efface la sauvegarde)</button>
+      <button id="btn-confirm-cancel" class="btn ghost" type="button">Annuler</button>
     </div>
   </div>
 </section>
@@ -150,7 +165,11 @@
       <button class="tab" data-tab="betes" type="button">Créatures</button>
     </div>
     <div id="usine-body"></div>
-    <button id="btn-usine-close" class="btn" type="button">Fermer</button>
+    <div class="usine-foot">
+      <button id="btn-quit" class="btn ghost" type="button">Sauvegarder et quitter</button>
+      <button id="btn-usine-close" class="btn" type="button">Fermer</button>
+    </div>
+    <p id="quit-note" class="msg" role="status"></p>
   </div>
 </section>
 

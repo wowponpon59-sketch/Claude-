@@ -1,10 +1,17 @@
-# Two Supply — Droïdes (version 0.4)
+# Two Supply — Droïdes (version 0.4.1)
 
 Usine de droïdes dans un terrain vague, en 20 niveaux, en solo (avec un coéquipier IA) ou à deux téléphones.
 
 **Jouer :** `https://wowponpon59-sketch.github.io/Claude-/two-supply-droides/`
 
 Les versions 0.2 et 0.3 restent dans l’historique Git. La version 0.1 (pain) est dans `two-supply/`.
+
+## Correctifs de la 0.4.1
+
+- **Créatures en solo** : le coéquipier IA rabat la créature vers toi et ne la lâche plus tant que tu restes dans les parages ; une fois encerclée, elle reste bloquée au moins 2 secondes ; on l’attrape à 2,6 m (au lieu de 2 m) et le bouton « Attraper » passe avant les débris, chantiers et machines voisins.
+- **Appel du partenaire** : le bord de l’écran clignote jusqu’à ce que tu arrives sur place, 15 secondes au plus.
+- **Zoom de Safari** bloqué pendant le jeu (joystick + bouton, double tape) ; si la page est quand même zoomée, un bouton « Recadrer l’écran » apparaît.
+- **Sauvegardes** : le bloc « Reprendre » n’apparaît plus sans sauvegarde ; « Jouer seul » ou « Créer une partie à deux » demandent confirmation avant d’écraser une partie ; repère « Partie sauvegardée ✓ » ; bouton « Sauvegarder et quitter » dans le panneau Usine.
 
 ## Nouveautés de la 0.4
 

@@ -436,6 +436,47 @@ export function fillLevelUp(n) {
 }
 
 // Appel du partenaire : bord de l'écran qui clignote, grand message, vibration
+// Appel terminé (arrivé sur place ou 15 s écoulées) : le bord arrête de clignoter
+export function callStop() { $('call-flash').classList.remove('on'); $('call-msg').classList.remove('on'); }
+
+// Petit repère « Partie sauvegardée ✓ »
+let tickT = 0;
+export function savedTick() {
+  const el = $('save-tick');
+  clearTimeout(tickT);
+  el.classList.remove('fade'); el.classList.add('on');
+  tickT = setTimeout(() => { el.classList.add('fade'); tickT = setTimeout(() => el.classList.remove('on', 'fade'), 550); }, 1800);
+}
+
+// ---------- Safari : pas de zoom de la page pendant le jeu ----------
+const zoomed = () => !!(window.visualViewport && window.visualViewport.scale > 1.05);
+export function guardZoom() {
+  // Tant que la page n'est pas zoomée, on bloque tous les gestes de zoom ; si elle l'est déjà, on laisse dézoomer
+  const stop = (e) => { if (!zoomed() && e.cancelable) e.preventDefault(); };
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, stop, { passive: false });
+  // Deux doigts à l'écran (joystick + bouton) : jamais de pincement
+  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) stop(e); }, { passive: false });
+  // Les commandes du jeu ne déclenchent ni zoom, ni double tape, ni loupe
+  for (const id of ['stick-zone', 'look-zone', 'btn-action']) $(id).addEventListener('touchstart', stop, { passive: false });
+  // Secours : la page est quand même zoomée → bouton « Recadrer l'écran » dans la partie visible
+  const vv = window.visualViewport, fix = $('btn-unzoom');
+  if (!vv) return;
+  const place = () => {
+    const z = zoomed();
+    fix.hidden = !z;
+    if (z) fix.style.transform = `translate(${vv.offsetLeft + vv.width / 2}px, ${vv.offsetTop + 14 / vv.scale}px) scale(${1 / vv.scale}) translateX(-50%)`;
+  };
+  vv.addEventListener('resize', place);
+  vv.addEventListener('scroll', place);
+  fix.addEventListener('click', () => {
+    const meta = document.querySelector('meta[name=viewport]');
+    const base = meta.getAttribute('content');
+    meta.setAttribute('content', base.replace('maximum-scale=1,', 'maximum-scale=1.01,'));
+    setTimeout(() => { meta.setAttribute('content', base); window.scrollTo(0, 0); place(); }, 80);
+  });
+  place();
+}
+
 export function callAlert(text, them) {
   const fl = $('call-flash');
   fl.style.setProperty('--cc', PLAYER_COLORS[them].css);

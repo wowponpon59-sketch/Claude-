@@ -346,9 +346,10 @@ export function targets(S, id) {
   for (const a of S.animals) {
     if (a.st !== 'wander' && a.st !== 'flee' && a.st !== 'corner') continue;
     const d = dist(p, a);
-    if (d > 2.0) continue;
+    if (d > 2.6) continue;
     if (myAnimal) add('animal' + a.id, d, { off: true, kind: 'duo', label: 'Tu tiens déjà une créature' });
-    else if (a.st === 'corner') add('animal' + a.id, d, { kind: 'duo', act: 'catch', animal: a.id, label: `Attraper le ${ANIMALS[a.sp].name}` });
+    // Créature encerclée : le bouton « Attraper » passe avant tout le reste (débris, chantier ou machine voisine)
+    else if (a.st === 'corner') add('animal' + a.id, d - 5, { kind: 'duo', act: 'catch', animal: a.id, label: `Attraper le ${ANIMALS[a.sp].name}` });
     else add('animal' + a.id, d + 0.4, { off: true, kind: 'duo', label: 'Il esquive : prenez-le en tenaille à deux' });
   }
 
@@ -1344,13 +1345,17 @@ function animals(S, dt) {
     if (near.length === 2) {
       const [u, v] = near;
       const cos = ((u.p.x - a.x) * (v.p.x - a.x) + (u.p.z - a.z) * (v.p.z - a.z)) / (u.d * v.d || 1);
-      // En tenaille, ou essoufflée et entourée de près par les deux joueurs
-      cornered = cos < -0.34 || (a.tired > 4 && u.d < 3.2 && v.d < 3.2);
+      // En tenaille (après avoir un peu fui : pas de capture par hasard), ou essoufflée et entourée de près par les deux joueurs
+      cornered = (cos < -0.2 && a.tired > 0.6) || (a.tired > 4 && u.d < 3.2 && v.d < 3.2);
     }
+    // Une fois encerclée, elle reste bloquée au moins 2 secondes : le temps d'appuyer sur « Attraper »
+    if (cornered) a.cornerT = 2;
+    else if (a.cornerT > 0 && near.length) { a.cornerT -= dt; cornered = true; }
+    else a.cornerT = 0;
     if (cornered) {
       a.st = 'corner';
       a.x += (Math.random() - 0.5) * 0.04; a.z += (Math.random() - 0.5) * 0.04;
-      const p = near[0].d < near[1].d ? near[0].p : near[1].p;
+      const p = near.reduce((u, v) => (v.d < u.d ? v : u)).p;
       a.rot = Math.atan2(p.x - a.x, p.z - a.z);
     } else if (near.length) {
       a.st = 'flee';

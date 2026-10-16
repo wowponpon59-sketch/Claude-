@@ -25,8 +25,18 @@ export function botInput(S, bot, dt, aIn) {
   });
   const heavy = Object.values(S.machines).find((m) => m.broken === 'heavy' && (nearPost(postL(PLOTS.find((p) => p.id === m.id))) || nearPost(postR(PLOTS.find((p) => p.id === m.id)))));
   const holdsOne = S.animals.some((a) => a.st === 'caught' && a.by === 'A');
-  // Il ne rabat une créature que si le joueur s'en approche vraiment (pas pendant une fouille)
-  const hunting = holdsOne || S.work.A ? null : S.animals.find((a) => ['flee', 'corner'].includes(a.st) && dist(A, a) < 5);
+  // Créature : dès que le joueur s'en approche, le coéquipier la prend pour cible, la rabat vers lui
+  // et ne la lâche pas tant que le joueur reste dans les parages (12 m).
+  // Pas de chasse pendant que le joueur fouille ou travaille, ni dans les 2 secondes qui suivent.
+  let hunting = null;
+  if (S.work.A) bot.busyAt = S.time;
+  const busy = S.work.A || S.time - (bot.busyAt ?? -99) < 2;
+  if (!holdsOne && !busy) {
+    const prey = bot.prey && S.animals.find((a) => a.id === bot.prey && ['wander', 'flee', 'corner'].includes(a.st));
+    if (prey && dist(A, prey) < 12) hunting = prey;
+    else hunting = S.animals.filter((a) => ['flee', 'corner'].includes(a.st) && dist(A, a) < 5).sort((u, v) => dist(A, u) - dist(A, v))[0] || null;
+  }
+  bot.prey = hunting ? hunting.id : null;
 
   if (!c.placed && (c.hand.A || c.hand.B)) {
     why = 'caisse';
@@ -85,7 +95,7 @@ export function botInput(S, bot, dt, aIn) {
     bot.stuck = far > 1 && far > (bot.lastFar ?? 1e9) - 0.02 ? (bot.stuck || 0) + dt : 0;
     bot.lastFar = far;
     if (far > 22 || bot.stuck > 1.5) { bot.ent.x = goal.x; bot.ent.z = goal.z; bot.stuck = 0; bot.lastFar = 0; }
-    const speed = why === 'créature' ? SPEED * 1.25 : far > 6 ? SPEED * 1.15 : SPEED;
+    const speed = why === 'créature' ? SPEED * 1.4 : far > 6 ? SPEED * 1.15 : SPEED;
     steer(bot.ent, goal.x, goal.z, speed, dt, obstacles(S), 0.4);
     const vx = bot.ent.x - x0, vz = bot.ent.z - z0, v = Math.hypot(vx, vz);
     if (v > 1e-4) { mx = vx / v; mz = vz / v; bot.ent.rot = Math.atan2(mx, mz); }

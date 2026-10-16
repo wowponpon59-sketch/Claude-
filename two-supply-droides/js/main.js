@@ -45,6 +45,7 @@ const input = UI.createInput((e) => {
   app.link.send({ t: 'ev', e });
 }, cam);
 UI.bindHud();
+UI.guardZoom();
 for (const ev of ['pointerdown', 'touchend', 'click']) addEventListener(ev, unlockAudio, { passive: true });
 
 // ---------- sauvegarde (sur le téléphone qui héberge la partie) ----------
@@ -62,6 +63,7 @@ function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ at: Date.now(), code: app.mode === 'duo' ? app.code : null, st: app.sim }, round));
     app.lastSave = performance.now();
+    UI.savedTick();
   } catch (e) { /* stockage indisponible : on continue sans sauvegarde */ }
 }
 function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignoré */ } }
@@ -71,11 +73,14 @@ function showResume() {
   app.saved = d;
   $('resume').hidden = !d;
   if (!d) return;
+  const lock = d.st.gen && d.st.gen.lockUntil > Date.now();
+  $('resume-info').innerHTML = `<b>Partie sauvegardée</b> · ${saveSummary(d)}`
+    + (lock ? `<br><b class="bad">Surchauffe : reprise dans <span id="resume-lock"></span></b>` : '');
+}
+function saveSummary(d) {
   const s = d.st, t = Math.round(s.time);
   const when = new Date(d.at).toLocaleString('fr-FR', { weekday: 'long', hour: '2-digit', minute: '2-digit' });
-  const lock = s.gen && s.gen.lockUntil > Date.now();
-  $('resume-info').innerHTML = `<b>Partie sauvegardée</b> · niveau ${s.level + 1}/${LEVELS.length} (${LEVELS[s.level].name}) · ${s.droids.length} droïdes · ${s.credits} crédits · ${Math.floor(t / 60)} min de jeu<br><span class="muted">${when}</span>`
-    + (lock ? `<br><b class="bad">Surchauffe : reprise dans <span id="resume-lock"></span></b>` : '');
+  return `niveau ${s.level + 1}/${LEVELS.length} (${LEVELS[s.level].name}) · ${s.droids.length} droïdes · ${s.credits} crédits · ${Math.floor(t / 60)} min de jeu<br><span class="muted">${when}</span>`;
 }
 showResume();
 setInterval(() => {
@@ -103,9 +108,28 @@ function playSolo(saved) {
   app.bot = createBot();
   startGame(saved);
 }
-$('btn-solo').addEventListener('click', () => playSolo(null));
+// Nouvelle partie alors qu'une sauvegarde existe : on demande avant de l'écraser
+function newGame(mode) {
+  app.saved = readSave();
+  if (!app.saved) { if (mode === 'solo') playSolo(null); else hostGame(null); return; }
+  app.confirmMode = mode;
+  $('confirm-info').innerHTML = saveSummary(app.saved);
+  $('btn-confirm-resume').textContent = mode === 'solo' ? 'Reprendre ma partie (seul)' : 'Reprendre ma partie (à deux)';
+  UI.overlay('screen-confirm', true);
+}
+$('btn-solo').addEventListener('click', () => newGame('solo'));
+$('btn-host').addEventListener('click', () => newGame('duo'));
+$('btn-confirm-cancel').addEventListener('click', () => UI.overlay('screen-confirm', false));
+$('btn-confirm-resume').addEventListener('click', () => {
+  UI.overlay('screen-confirm', false);
+  if (app.confirmMode === 'solo') playSolo(app.saved && app.saved.st);
+  else hostGame(app.saved && app.saved.st, app.saved && app.saved.code);
+});
+$('btn-confirm-new').addEventListener('click', () => {
+  UI.overlay('screen-confirm', false);
+  if (app.confirmMode === 'solo') playSolo(null); else hostGame(null);
+});
 $('btn-resume-solo').addEventListener('click', () => playSolo(app.saved && app.saved.st));
-$('btn-host').addEventListener('click', () => hostGame(null));
 $('btn-resume-duo').addEventListener('click', () => hostGame(app.saved && app.saved.st, app.saved && app.saved.code));
 let delArmed = false;
 $('btn-resume-del').addEventListener('click', () => {
@@ -235,7 +259,7 @@ function hostMessage(m) {
       r.events.push(e);
       break;
     }
-    case 'ping': if (app.sim) { const b = app.sim.players.B; handleFx({ k: 'call', text: 'Ton partenaire t’appelle !', x: b.x, z: b.z }); } break;
+    case 'ping': if (app.sim) { const b = app.sim.players.B; handleFx({ k: 'call', text: 'Ton partenaire t’appelle !', x: b.x, z: b.z, meet: true }); } break;
   }
 }
 function clientMessage(m) {
@@ -272,7 +296,8 @@ function handleFx(f) {
     case 'sfx': play(f.s); break;
     case 'call':
       UI.callAlert(f.text, other(app.myId));
-      app.callUntil = performance.now() + 6000;
+      // Le bord clignote jusqu'à ce qu'on arrive sur place, 15 secondes au plus
+      app.call = { x: f.x, z: f.z, meet: !!f.meet, from: performance.now(), until: performance.now() + 15000 };
       play('call');
       break;
     case 'menu': if (!UI.isOverlay()) openMenu(f.menu); break;
@@ -359,13 +384,37 @@ $('btn-go').addEventListener('click', () => {
   UI.overlay('screen-howto', false);
   if (app.st && app.st.level === 0 && !app.st.machines.forge) UI.pointTo(-17, -10, 5);
 });
-function openUsine(tab) { if (tab) app.usineTab = tab; UI.fillUsine(app.st, app.usineTab, sendCmd); UI.overlay('screen-usine', true); }
+function openUsine(tab) {
+  if (tab) app.usineTab = tab;
+  UI.fillUsine(app.st, app.usineTab, sendCmd);
+  quitReset();
+  UI.overlay('screen-usine', true);
+}
+// « Sauvegarder et quitter » (l'invité quitte seulement : la sauvegarde est chez l'hôte)
+let quitArmed = false, quitTimer = 0;
+function quitReset() {
+  quitArmed = false; clearTimeout(quitTimer);
+  $('btn-quit').textContent = app.isHost ? 'Sauvegarder et quitter' : 'Quitter la partie';
+  UI.setMsg('quit-note', app.isHost ? '' : 'La sauvegarde est sur le téléphone de ton partenaire.');
+}
+function goHome() { if (app.link) app.link.destroy(); location.href = location.pathname + (NET === 'fake' ? '?net=fake' : ''); }
+$('btn-quit').addEventListener('click', () => {
+  if (app.mode === 'duo' && !quitArmed) {
+    quitArmed = true;
+    $('btn-quit').textContent = 'Toucher encore pour quitter';
+    UI.setMsg('quit-note', app.isHost ? 'La partie est sauvegardée ; celle de ton partenaire se mettra en pause.' : 'La sauvegarde est sur le téléphone de ton partenaire ; sa partie se mettra en pause.');
+    quitTimer = setTimeout(quitReset, 4000);
+    return;
+  }
+  saveGame();
+  goHome();
+});
 $('btn-usine').addEventListener('click', () => openUsine(app.usineTab === 'org' || app.usineTab === 'vestiaire' ? 'entrepot' : null));
 $('btn-team').addEventListener('click', () => openUsine('org'));
 $('btn-vest').addEventListener('click', () => openUsine('vestiaire'));
 $('btn-lock-team').addEventListener('click', () => openUsine('org'));
 $('btn-lock-vest').addEventListener('click', () => openUsine('vestiaire'));
-$('btn-lock-home').addEventListener('click', () => { saveGame(); if (app.link) app.link.destroy(); location.href = location.pathname + (NET === 'fake' ? '?net=fake' : ''); });
+$('btn-lock-home').addEventListener('click', () => { saveGame(); goHome(); });
 $('btn-zone-close').addEventListener('click', () => UI.overlay('screen-zone', false));
 $('btn-lvl-ok').addEventListener('click', () => UI.overlay('screen-levelup', false));
 $('btn-usine-close').addEventListener('click', () => UI.overlay('screen-usine', false));
@@ -383,7 +432,7 @@ $('btn-call').addEventListener('click', () => {
   lastCall = performance.now();
   play('tap');
   UI.toast('Signal envoyé à ton partenaire.', 'info');
-  if (app.isHost) app.pendingFx.push({ to: 'B', k: 'call', text: 'Ton partenaire t’appelle !', x: app.me.x, z: app.me.z });
+  if (app.isHost) app.pendingFx.push({ to: 'B', k: 'call', text: 'Ton partenaire t’appelle !', x: app.me.x, z: app.me.z, meet: true });
   else if (app.link) app.link.send({ t: 'ping' });
 });
 
@@ -504,8 +553,15 @@ function frame(now) {
     renderer.render(scene.root, dt);
     labels.update(renderer, UI.worldLabels(st, app.myId, me));
     UI.updateHud(st, app.myId, { bot: app.bot ? botLabel(app.bot) : '', me });
-    // Appel du partenaire : la flèche le suit pendant quelques secondes
-    if (app.callUntil && now < app.callUntil) { const o = st.players[other(app.myId)]; UI.pointTo(o.x, o.z, 0.3); }
+    // Appel du partenaire : bord clignotant et flèche vers lui, jusqu'à ce qu'on soit sur place (15 s au plus)
+    if (app.call) {
+      const o = st.players[other(app.myId)], c = app.call;
+      const gap = (q) => (Number.isFinite(q.x) && Number.isFinite(q.z) ? Math.hypot(me.x - q.x, me.z - q.z) : 1e9);
+      // sur place, ou (simple appel « viens ») à côté du partenaire ; toujours visible au moins 1,5 s
+      const there = now - c.from > 1500 && (gap(c) < 3.3 || (c.meet && gap(o) < 3));
+      if (now > c.until || there) { app.call = null; UI.callStop(); }
+      else UI.pointTo(o.x, o.z, 0.3);
+    }
     UI.updateArrow(renderer);
     UI.updateFloaters(renderer);
     // Menus ouverts : mis à jour en direct

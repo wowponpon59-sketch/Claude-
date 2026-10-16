@@ -1,7 +1,7 @@
 // Two Supply — Droïdes (version 0.4)
 // Repère : x vers l'est, z vers le sud, y vers le haut. Unité : mètre.
 
-export const VERSION = '0.4';
+export const VERSION = '0.4.1';
 export const SAVE_KEY = 'twosupply-droides-save-v04';
 
 export const WORLD = { half: 40 };

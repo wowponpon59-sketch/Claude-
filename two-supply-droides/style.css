@@ -341,7 +341,7 @@ h1 span { display: block; color: var(--yellow); }
 .pick.pack[disabled] { opacity: 0.45; }
 .small { font-size: 12.5px; }
 #call-flash { position: absolute; inset: 0; pointer-events: none; display: none; box-shadow: inset 0 0 0 10px var(--cc, var(--them)), inset 0 0 80px 30px color-mix(in srgb, var(--cc, var(--them)) 55%, transparent); }
-#call-flash.on { display: block; animation: flash 0.45s ease-in-out 6 alternate; }
+#call-flash.on { display: block; animation: flash 0.45s ease-in-out infinite alternate; }
 @keyframes flash { from { opacity: 0.2; } to { opacity: 1; } }
 #call-msg { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); display: none; pointer-events: none; background: var(--them, var(--b)); color: #fff; font: 800 22px/1.2 var(--display); letter-spacing: 0.02em; padding: 12px 18px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); text-align: center; max-width: 84vw; }
 #call-msg.on { display: block; animation: callin 4.2s ease forwards; }
@@ -367,3 +367,24 @@ h1 span { display: block; color: var(--yellow); }
 @media (orientation: portrait) {
   #mode-chip { display: none; }
 }
+
+/* ---------- 0.4.1 ---------- */
+/* L'attribut hidden l'emporte toujours (le bloc « Reprendre » s'affichait sans sauvegarde) */
+[hidden] { display: none !important; }
+/* Pas de zoom au double tape sur les boutons */
+button, .btn, input, label, a { touch-action: manipulation; }
+.round { touch-action: none; }
+/* « Partie sauvegardée ✓ » */
+#save-tick { position: absolute; right: calc(12px + env(safe-area-inset-right)); top: calc(56px + env(safe-area-inset-top)); z-index: 6; pointer-events: none; visibility: hidden; opacity: 0; background: rgba(14, 17, 21, 0.86); color: var(--good); border: 1px solid currentColor; border-radius: 999px; padding: 4px 12px; font: 600 12.5px/1.2 var(--body, 'Barlow', sans-serif); white-space: nowrap; }
+#save-tick.on { visibility: visible; opacity: 1; }
+#save-tick.on.fade { opacity: 0; transition: opacity 0.5s ease; }
+/* Page zoomée par Safari : bouton pour recadrer, placé dans la partie visible */
+#btn-unzoom { position: fixed; left: 0; top: 0; z-index: 200; transform-origin: 0 0; background: var(--yellow); color: var(--ink); border: 0; border-radius: 12px; padding: 10px 16px; font: 800 17px/1.15 var(--display, 'Barlow Condensed', sans-serif); letter-spacing: 0.02em; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55); text-align: center; }
+#btn-unzoom small { display: block; margin-top: 2px; font: 600 12px/1.2 var(--body, 'Barlow', sans-serif); letter-spacing: 0; opacity: 0.8; }
+/* Confirmation avant d'écraser une sauvegarde, quitter la partie */
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.stack .btn { width: 100%; }
+#confirm-info { color: var(--text); }
+.usine-foot { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center; }
+.usine-foot .btn { flex: 1; min-width: 150px; }
+#quit-note { margin: 4px 0 0; text-align: center; }
