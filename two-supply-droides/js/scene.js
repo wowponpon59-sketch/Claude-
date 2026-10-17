@@ -1,11 +1,11 @@
 // Scène : assemble le monde et le met à jour à partir de l'état du jeu.
 import { Node, mesh, mat, ring } from './gl.js';
-import { PLOTS, MACHINES, ENTREPOT, CORE, PLAYER_COLORS, POST_R, ITEM_ORDER } from './config.js';
+import { PLOTS, MACHINES, ENTREPOT, CORE, PLAYER_COLORS, POST_R, ITEM_ORDER, PAUSE } from './config.js';
 import { NODES, height } from './world.js';
 import { NODE_TYPES } from './config.js';
 import {
   buildGround, buildDecor, nodeModel, machineModel, plotModel, entrepotModel, coreModel,
-  workerModel, droidModel, animalModel, itemPile,
+  workerModel, droidModel, animalModel, itemPile, pauseModel,
 } from './models.js';
 import { postL, postR, plotUnlocked } from './sim.js';
 
@@ -38,6 +38,9 @@ export function buildScene(mode = 'duo') {
   ent.pos = [ENTREPOT.x, 0, ENTREPOT.z];
   root.add(ent);
   S.targets.entrepot = ent;
+  S.pause = pauseModel();
+  S.pause.pos = [PAUSE.x, 0, PAUSE.z];
+  root.add(S.pause);
 
   for (const p of PLOTS) {
     const pm = plotModel(p.type);
@@ -279,7 +282,29 @@ export function updateScene(S, st, view) {
       m.parts.arms[1].rot[0] = -1.0 - Math.sin(view.time * 9) * 0.4;
     }
     if (d.carry && m.parts.arms) { m.parts.arms[0].rot[0] = -1.2; m.parts.arms[1].rot[0] = -1.2; }
+    // Coin pause : assis sur le canapé ou debout, une tasse de café qu'il porte de temps en temps à la bouche
+    const P = m.parts;
+    P.mug.visible = !!d.pose;
+    if (d.pose === 'sit') {
+      P.hips.pos[1] = (P.hips.base ?? 0.72) - 0.26;
+      P.legs[0].rot[0] = -1.15; P.legs[1].rot[0] = -1.15;
+    }
+    if (d.pose) {
+      const ph = (view.time * 0.8 + d.id * 1.37) % 6;
+      const sip = ph < 1.2 ? Math.sin((ph / 1.2) * Math.PI) : 0;
+      P.arms[1].rot[0] = -0.95 - sip * 1.15;
+      P.arms[0].rot[0] = d.pose === 'sit' ? -0.3 : 0.05;
+      P.head.rot[0] = sip * -0.25;
+    } else P.head.rot[0] = 0;
+    P.mug.rot[0] = -P.arms[1].rot[0];
   }
+  // Vapeur de la machine à café
+  S.pause.anim.steam.children.forEach((s, i) => {
+    const t = (view.time * 0.5 + i / 3) % 1;
+    s.pos = [Math.sin(view.time * 1.3 + i * 2) * 0.05, t * 0.6, Math.cos(i * 3) * 0.04];
+    const sc = 0.5 + t * 1.3; s.scl = [sc, sc, sc];
+    s.mesh.mat.opacity = 0.45 * (1 - t);
+  });
   for (const [id, m] of S.droids) if (!seen.has(id)) { m.visible = false; }
 
   // Créatures

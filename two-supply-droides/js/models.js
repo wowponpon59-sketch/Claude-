@@ -557,6 +557,64 @@ export function coreModel() {
   return root;
 }
 
+// ---------- coin pause : canapés, table basse, café ----------
+export function pauseModel() {
+  const root = new Node();
+  const fabric = mat([0.62, 0.24, 0.18], { pattern: P.paint, rough: 0.95 });
+  const cushion = mat([0.72, 0.32, 0.22], { pattern: P.paint, rough: 0.95 });
+  const wood = mat(C.wood, { pattern: P.wood });
+  const dark = mat(C.dark, { rough: 0.5 });
+  const steel = mat(C.steel, { pattern: P.paint, rough: 0.3 });
+  const white = mat([0.93, 0.92, 0.88], { rough: 0.4 });
+  const coffee = mat([0.22, 0.12, 0.06], { rough: 0.2 });
+  // Tapis
+  root.add(mesh(B(3.0, 0.02, 3.3), mat([0.24, 0.36, 0.46], { pattern: P.paint, rough: 1, cast: false })).at(0, 0, 0));
+  root.add(mesh(B(2.7, 0.025, 3.0), mat([0.30, 0.44, 0.54], { pattern: P.paint, rough: 1, cast: false })).at(0, 0, 0));
+  // Deux canapés face à face
+  for (const s of [-1, 1]) {
+    const z = s * 1.0;
+    root.add(mesh(B(1.9, 0.38, 0.72), fabric).at(0, 0.04, z));
+    for (const x of [-0.62, 0, 0.62]) root.add(mesh(B(0.58, 0.08, 0.6), cushion).at(x, 0.42, z - s * 0.04));
+    root.add(mesh(B(1.9, 0.5, 0.2), fabric).at(0, 0.42, z + s * 0.27));
+    for (const x of [-1.02, 1.02]) root.add(mesh(B(0.15, 0.6, 0.76), fabric).at(x, 0.04, z));
+    for (const x of [-0.95, 0.95]) for (const dz of [-0.3, 0.3]) root.add(mesh(B(0.06, 0.04, 0.06), dark).at(x, 0, z + dz));
+  }
+  // Table basse avec des tasses et un journal
+  root.add(mesh(B(1.3, 0.05, 0.48), wood).at(0, 0.3, 0));
+  for (const x of [-0.58, 0.58]) for (const z of [-0.19, 0.19]) root.add(mesh(B(0.05, 0.3, 0.05), wood).at(x, 0, z));
+  for (const [x, z] of [[-0.4, 0.08], [0.15, -0.1], [0.45, 0.12]]) {
+    root.add(mesh(CY(0.045, 0.04, 0.09, 10), white).at(x, 0.35, z));
+    root.add(mesh(CY(0.038, 0.038, 0.005, 10), coffee).at(x, 0.43, z));
+  }
+  root.add(mesh(B(0.3, 0.012, 0.22), mat([0.85, 0.83, 0.76])).at(-0.05, 0.35, 0.05));
+  // Comptoir et machine à café (elle fume)
+  const bar = new Node().at(0, 0, -1.85);
+  bar.add(mesh(B(1.1, 0.88, 0.5), wood));
+  bar.add(mesh(B(1.14, 0.04, 0.54), steel).at(0, 0.88, 0));
+  bar.add(mesh(B(0.38, 0.46, 0.32), mat([0.16, 0.16, 0.18], { pattern: P.paint, rough: 0.3 })).at(-0.22, 0.92, -0.02));
+  bar.add(mesh(B(0.38, 0.06, 0.33), mat([0.8, 0.15, 0.1], { pattern: P.paint })).at(-0.22, 1.32, -0.02));
+  bar.add(mesh(B(0.14, 0.04, 0.12), steel).at(-0.22, 1.02, 0.12));
+  const light = mesh(SP(0.025, 6, 4), mat([0.2, 0.9, 0.3], { emissive: [0.2, 0.9, 0.3] }));
+  light.pos = [-0.08, 1.25, 0.15];
+  bar.add(light);
+  bar.add(mesh(CY(0.04, 0.035, 0.08, 10), white).at(-0.22, 0.92, 0.12));
+  for (const [x, k] of [[0.2, 0], [0.28, 1], [0.2, 2]]) bar.add(mesh(CY(0.045, 0.04, 0.09, 10), white).at(x, 0.92 + (k === 2 ? 0.09 : 0), k === 1 ? 0.1 : -0.05));
+  bar.add(mesh(CY(0.07, 0.07, 0.2, 12), mat([0.62, 0.86, 0.88], { opacity: 0.6, rough: 0.1 })).at(0.42, 0.92, 0.0));
+  bar.add(mesh(CY(0.06, 0.06, 0.1, 12), coffee).at(0.42, 0.93, 0.0));
+  const steam = new Node();
+  for (let k = 0; k < 3; k++) steam.add(mesh(SP(0.06, 8, 6), mat([0.95, 0.95, 0.95], { opacity: 0.4, cast: false })));
+  steam.pos = [-0.22, 1.36, -0.02];
+  bar.add(steam);
+  root.add(bar);
+  // Plante
+  const plant = new Node().at(-1.35, 0, 1.75);
+  plant.add(mesh(CY(0.2, 0.15, 0.36, 12), mat([0.66, 0.36, 0.22], { pattern: P.clay })));
+  for (const [x, y, z, r] of [[0, 0.62, 0, 0.26], [0.13, 0.5, 0.1, 0.18], [-0.12, 0.52, -0.08, 0.19], [0.05, 0.85, -0.04, 0.16]]) plant.add(mesh(SP(r, 10, 8), mat([0.22, 0.52, 0.28], { rough: 0.8 })).at(x, y, z));
+  root.add(plant);
+  root.anim = { steam };
+  return root;
+}
+
 // ---------- humain (joueur) ----------
 export function workerModel(id) {
   const col = PLAYER_COLORS[id].rgb;
@@ -629,6 +687,13 @@ export function droidModel() {
     arm.add(mesh(SP(0.065, 8, 6), mat(C.dark)).at(0, -0.56, 0));
     body.add(arm); arms.push(arm);
   }
+  // Tasse de café (au coin pause)
+  const mug = new Node().at(0, -0.6, 0.02);
+  mug.add(mesh(CY(0.055, 0.048, 0.11, 10), mat([0.95, 0.94, 0.9], { rough: 0.35 })));
+  mug.add(mesh(CY(0.047, 0.047, 0.006, 10), mat([0.22, 0.12, 0.06], { rough: 0.2 })).at(0, 0.1, 0));
+  mug.add(mesh(B(0.02, 0.06, 0.03), mat([0.95, 0.94, 0.9], { rough: 0.35 })).at(0.065, 0.025, 0));
+  mug.visible = false;
+  arms[1].add(mug);
   const head = new Node().at(0, 0.78, 0);
   const skull = mesh(SP(0.19, 12, 9), steel);
   skull.scl = [1.15, 0.85, 1];
@@ -678,7 +743,7 @@ export function droidModel() {
   for (const k of Object.keys(outfit)) { outfit[k].visible = false; body.add(outfit[k]); }
   hips.add(body);
   root.add(hips);
-  root.parts = { legs, arms, body, head, acc, paint, glow, hips, outfit };
+  root.parts = { legs, arms, body, head, acc, paint, glow, hips, outfit, mug };
   root.setType = (type) => {
     const d = DROIDS[type];
     paint.color = d.color;

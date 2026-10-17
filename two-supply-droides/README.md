@@ -1,10 +1,17 @@
-# Two Supply — Droïdes (version 0.4.1)
+# Two Supply — Droïdes (version 0.4.2)
 
 Usine de droïdes dans un terrain vague, en 20 niveaux, en solo (avec un coéquipier IA) ou à deux téléphones.
 
 **Jouer :** `https://wowponpon59-sketch.github.io/Claude-/two-supply-droides/`
 
 Les versions 0.2 et 0.3 restent dans l’historique Git. La version 0.1 (pain) est dans `two-supply/`.
+
+## Nouveautés de la 0.4.2
+
+- **Métiers plus tôt** : agent de recherche dès le niveau 5 (objectif au niveau 6), agent logistique expert au niveau 10 ; le niveau 7 devient « Les bâtisseurs » (ingénieur).
+- **Recycleur au niveau 11** : on coche les objets en trop dans son menu (pièces et kits) ; il rend la moitié des matières premières qui ont servi à les fabriquer et laisse toujours 10 objets à l’entrepôt (3 pour un kit). L’agent logistique expert les lui apporte. Les rebuts arrivent avec le contrôle qualité ; le niveau 14 devient « Le tri ».
+- **Pause automatique** : une recette s’arrête quand l’entrepôt a 20 de ces pièces ou 3 de ces kits (10 pour un objet coché « en trop ») et repart dès que le stock baisse. Pas de pause tant qu’un objectif du niveau demande d’en produire.
+- **Coin pause** à côté de l’entrepôt : les droïdes spécialisés sans tâche s’assoient sur les canapés avec un café (6 places), les autres restent debout autour ; ils se lèvent dès qu’il y a du travail.
 
 ## Correctifs de la 0.4.1
 

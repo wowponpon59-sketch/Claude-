@@ -1,7 +1,7 @@
 // Génération du terrain vague : relief, débris à fouiller, décor, obstacles.
 // La carte dépend d'une graine tirée à chaque nouvelle partie ; les deux téléphones
 // reçoivent la même graine et construisent donc exactement le même monde.
-import { WORLD, SLAB, NODE_TYPES, NODE_MIX, PLOTS, MACHINES, ENTREPOT, CORE } from './config.js';
+import { WORLD, SLAB, NODE_TYPES, NODE_MIX, PLOTS, MACHINES, ENTREPOT, CORE, PAUSE } from './config.js';
 
 export function rng(seed) {
   let a = seed >>> 0;
@@ -175,6 +175,10 @@ export function genWorld(seed) {
     else STATIC_OBS.push({ c: true, x: w.x, z: w.z, r: w.r });
   }
   STATIC_OBS.push({ x: ENTREPOT.x, z: ENTREPOT.z, w: ENTREPOT.w, d: ENTREPOT.d });
+  // Coin pause : canapés et table basse, comptoir du café, plante
+  STATIC_OBS.push({ x: PAUSE.x, z: PAUSE.z, w: 2.2, d: 2.9 });
+  STATIC_OBS.push({ x: PAUSE.x, z: PAUSE.z - 1.85, w: 1.1, d: 0.5 });
+  STATIC_OBS.push({ c: true, x: PAUSE.x - 1.3, z: PAUSE.z + 1.75, r: 0.3 });
 }
 
 export function plotBox(p) { const m = MACHINES[p.type]; return { x: p.x, z: p.z, w: m.w, d: m.d }; }

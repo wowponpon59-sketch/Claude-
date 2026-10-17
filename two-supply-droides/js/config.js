@@ -1,7 +1,7 @@
-// Two Supply — Droïdes (version 0.4)
+// Two Supply — Droïdes (version 0.4.2)
 // Repère : x vers l'est, z vers le sud, y vers le haut. Unité : mètre.
 
-export const VERSION = '0.4.1';
+export const VERSION = '0.4.2';
 export const SAVE_KEY = 'twosupply-droides-save-v04';
 
 export const WORLD = { half: 40 };
@@ -107,6 +107,9 @@ export const NODE_MIX = { epave: 6, ferraille: 6, vitres: 6, argile: 6, calcaire
 
 export const T = {
   dig: 0.7,
+  stockCap: 20,         // une recette se met en pause quand l'entrepôt a 20 de ces pièces…
+  kitCap: 3,            // … ou 3 de ces kits ; elle repart dès que le stock baisse
+  recReserve: 10,       // le recycleur laisse toujours 10 objets en trop à l'entrepôt (3 pour un kit)
   respawn: 70,
   repair: 3,
   heavyRepair: 5,
@@ -145,10 +148,10 @@ export const RECIPES = {
 
   outils: { name: 'Boîte à outils', in: { fer: 2, calcaire: 1 }, out: { k_outils: 1 }, time: 6, lvl: 2 },
   scanner: { name: 'Scanner de stock', in: { circuit: 1, verre: 2 }, out: { k_scanner: 1 }, time: 6, lvl: 2 },
-  detect: { name: 'Détecteur', in: { circuit: 1, fer: 2, verre: 1 }, out: { k_detect: 1 }, time: 6, lvl: 6 },
+  detect: { name: 'Détecteur', in: { circuit: 1, fer: 2, verre: 1 }, out: { k_detect: 1 }, time: 6, lvl: 4 },
   tablette: { name: 'Tablette de plans', in: { circuit: 2, isolant: 1 }, out: { k_tablette: 1 }, time: 6, lvl: 6 },
   valise: { name: 'Valise d’expert', in: { k_outils: 1, tole: 2, fil: 2 }, out: { k_valise: 1 }, time: 8, lvl: 8 },
-  terminal: { name: 'Terminal logistique', in: { circuit: 2, tole: 1, plastique: 1 }, out: { k_terminal: 1 }, time: 7, lvl: 10 },
+  terminal: { name: 'Terminal logistique', in: { circuit: 2, tole: 1, plastique: 1 }, out: { k_terminal: 1 }, time: 7, lvl: 9 },
   lecteur: { name: 'Lecteur qualité', in: { circuit: 1, plastique: 1, verre: 1 }, out: { k_lecteur: 1 }, time: 6, lvl: 12 },
   chariot: { name: 'Chariot de tri', in: { tole: 2, caoutchouc: 2, isolant: 1 }, out: { k_chariot: 1 }, time: 7, lvl: 13 },
   bras: { name: 'Bras multi-outils', in: { circuitA: 1, tole: 2 }, out: { k_bras: 1 }, time: 8, lvl: 15 },
@@ -165,7 +168,8 @@ export const RECIPES = {
   lingot: { name: 'Lingot', in: { fer: 1, charbon: 1 }, out: { lingot: 1 }, time: 5, lvl: 8 },
   tole: { name: 'Tôles (×2)', in: { lingot: 1 }, out: { tole: 2 }, time: 5, lvl: 8 },
   ctrl: { name: 'Contrôler les pièces déclassées', in: {}, out: {}, any: 'decl', time: 3, lvl: 12 },
-  recyc: { name: 'Recycler les rebuts', in: {}, out: {}, any: 'rebut', time: 4, lvl: 13 },
+  recyc: { name: 'Recycler les rebuts', in: {}, out: {}, any: 'rebut', time: 4, lvl: 12 },
+  surplus: { name: 'Recycler les objets en trop', in: {}, out: {}, any: 'surplus', time: 4, lvl: 10 },
   verreF: { name: 'Verre fondu (×2)', in: { sable: 2, charbon: 1 }, out: { verre: 2 }, time: 6, lvl: 15 },
   silicium: { name: 'Plaque de silicium', in: { sable: 1, calcaire: 1, charbon: 1 }, out: { silicium: 1 }, time: 7, lvl: 15 },
   carton: { name: 'Cartons (×2)', in: { bois: 1, plastique: 1 }, out: { carton: 2 }, time: 4, lvl: 17 },
@@ -187,7 +191,7 @@ export const MACHINES = {
   laminoir: { name: 'Laminoir', w: 3.4, d: 2.0, recipes: ['tole'], cost: { fer: 6, lingot: 3, caoutchouc: 2, fil: 2 }, desc: 'Lingot → tôles' },
   qualite: { name: 'Poste de contrôle qualité', w: 3.0, d: 2.2, noDecl: true, recipes: ['ctrl'], cost: { tole: 4, verre: 3, circuit: 2, plastique: 2 }, desc: 'Déclassé → bonne pièce ou rebut' },
   zone: { name: 'Zone des déclassés', w: 3.6, d: 2.2, recipes: [], store: true, cost: { bois: 4, fer: 2 }, desc: 'Stocke les pièces déclassées avant le contrôle' },
-  recycleur: { name: 'Recycleur', w: 2.8, d: 2.2, noDecl: true, recipes: ['recyc'], cost: { tole: 4, caoutchouc: 2, fil: 2 }, desc: 'Rebut → matière première' },
+  recycleur: { name: 'Recycleur', w: 2.8, d: 2.2, noDecl: true, recipes: ['surplus', 'recyc'], cost: { tole: 4, caoutchouc: 2, fil: 2 }, desc: 'Objets en trop et rebuts → matières premières' },
   four: { name: 'Four à verre', w: 3.0, d: 2.4, recipes: ['verreF', 'silicium'], cost: { argile: 6, calcaire: 4, tole: 2, sable: 4 }, desc: 'Sable fondu : verre et silicium' },
   emballeuse: { name: 'Emballeuse', w: 3.2, d: 2.2, recipes: ['carton', 'colis'], cost: { tole: 4, bois: 4, plastique: 3, caoutchouc: 2 }, desc: 'Cartons et colis' },
   quai: { name: 'Quai d’expédition', w: 4.0, d: 2.2, recipes: [], cost: { bois: 6, tole: 2, fer: 4 }, desc: 'Livrez les colis aux clients' },
@@ -207,7 +211,7 @@ export const PLOTS = [
   { id: 'fonderie', type: 'fonderie', x: -17, z: 7, level: 9 },
   { id: 'laminoir', type: 'laminoir', x: -8.5, z: 7, level: 9 },
   { id: 'qualite', type: 'qualite', x: 0, z: 7, level: 13 },
-  { id: 'recycleur', type: 'recycleur', x: 8.5, z: 7, level: 14 },
+  { id: 'recycleur', type: 'recycleur', x: 8.5, z: 7, level: 11 },
   { id: 'circuits2', type: 'circuits', x: 17, z: 7, level: 11 },
   { id: 'four', type: 'four', x: -17, z: 13, level: 16 },
   { id: 'zone', type: 'zone', x: 0, z: 13, level: 13 },
@@ -217,6 +221,8 @@ export const PLOTS = [
 
 export const ENTREPOT = { x: 0, z: -1.5, w: 4.2, d: 1.8 };
 export const START = { A: { x: -1.2, z: 2.4 }, B: { x: 1.2, z: 2.8 } };
+// Coin pause, à côté de l'entrepôt : les droïdes spécialisés sans tâche y prennent un café
+export const PAUSE = { x: 4.4, z: -0.6 };
 export const CORE = { x: 32, z: -27, w: 1.8, d: 1.3, handle: 1.45 };
 
 // ---------- droïdes : de l'ouvrier au chef de production ----------
@@ -225,10 +231,10 @@ export const DROIDS = {
   ouvrier: { name: 'Ouvrier', color: [0.95, 0.70, 0.15], css: '#f2b326', work: 'machine', desc: 'Fait tourner une machine à la place d’un humain.' },
   logistique: { name: 'Agent logistique', color: [0.25, 0.60, 1.0], css: '#3f99ff', kit: 'k_scanner', lvl: 2, work: 'hq', desc: 'Apporte les matières premières aux machines et range la production.' },
   maintenance: { name: 'Agent de maintenance', color: [0.30, 0.85, 0.45], css: '#4cd975', kit: 'k_outils', lvl: 2, work: 'hq', desc: 'Répare tout seul les pannes légères.' },
-  recherche: { name: 'Agent de recherche', color: [0.13, 0.76, 0.70], css: '#22c3b4', kit: 'k_detect', lvl: 6, work: 'hq', desc: 'Fouille le terrain vague et ramène à l’entrepôt la matière qui manque.' },
+  recherche: { name: 'Agent de recherche', color: [0.13, 0.76, 0.70], css: '#22c3b4', kit: 'k_detect', lvl: 4, work: 'hq', desc: 'Fouille le terrain vague et ramène à l’entrepôt la matière qui manque.' },
   ingenieur: { name: 'Ingénieur', color: [0.70, 0.40, 1.0], css: '#b366ff', kit: 'k_tablette', lvl: 6, work: 'hq', desc: 'Livre les matériaux et monte les nouvelles machines tout seul.' },
   chefmaint: { name: 'Chef de la maintenance', color: [0.12, 0.56, 0.31], css: '#1f8f4e', kit: 'k_valise', lvl: 8, work: 'hq', desc: 'Répare les pannes lourdes (et légères) tout seul.' },
-  expert: { name: 'Agent logistique expert', color: [0.17, 0.31, 0.84], css: '#2b4fd6', kit: 'k_terminal', lvl: 10, work: 'hq', desc: 'Distribue les pièces fabriquées à la machine qui en aura besoin le plus tôt.' },
+  expert: { name: 'Agent logistique expert', color: [0.17, 0.31, 0.84], css: '#2b4fd6', kit: 'k_terminal', lvl: 9, work: 'hq', desc: 'Distribue les pièces fabriquées à la machine qui en aura besoin le plus tôt.' },
   qualite: { name: 'Responsable qualité', color: [0.95, 0.95, 0.95], css: '#f2f2f2', kit: 'k_lecteur', lvl: 12, work: 'machine', only: 'qualite', desc: 'Tient le poste de contrôle : 1 rebut sur 3 déclassées au lieu de 1 sur 2.' },
   adjq: { name: 'Adjoint qualité', color: [0.89, 0.27, 0.25], css: '#e2463f', kit: 'k_chariot', lvl: 13, work: 'hq', desc: 'Amène les déclassées au contrôle, les rebuts au recycleur et les bonnes pièces à l’entrepôt.' },
   production: { name: 'Agent de production', color: [1.0, 0.48, 0.10], css: '#ff7a1a', kit: 'k_bras', lvl: 15, work: 'machine', desc: 'Fait tourner deux machines à la fois.' },
@@ -315,11 +321,11 @@ export const LEVELS = [
     { id: 'r6a', text: 'Produire 4 droïdes', c: ['made+', 4] },
     { id: 'r6b', text: 'Avoir 4 droïdes au travail', c: ['work', 4] },
     { id: 'r6c', text: 'Gagner 35 crédits', c: ['earn+', 35] },
+    { id: 'recherche', text: 'Former un agent de recherche (détecteur)' },
   ] },
-  { name: 'Les éclaireurs', goals: [
+  { name: 'Les bâtisseurs', goals: [
     { id: 'trefileuse', text: 'Construire la tréfileuse' },
     { id: 'r7a', text: 'Produire 4 fils de cuivre', c: ['item+', 4, 'fil'] },
-    { id: 'recherche', text: 'Former un agent de recherche (détecteur)' },
     { id: 'ingenieur', text: 'Former un ingénieur (tablette de plans)' },
   ] },
   { name: 'Nouveaux circuits', rodage: true, goals: [
@@ -337,11 +343,13 @@ export const LEVELS = [
     { id: 'r10a', text: 'Produire 5 droïdes', c: ['made+', 5] },
     { id: 'r10b', text: 'Avoir 6 droïdes au travail', c: ['work', 6] },
     { id: 'r10c', text: 'Gagner 45 crédits', c: ['earn+', 45] },
+    { id: 'expert', text: 'Former un agent logistique expert (terminal logistique)' },
   ] },
   { name: 'Deux lignes', goals: [
     { id: 'forge2', text: 'Construire une deuxième forge' },
     { id: 'circuits2', text: 'Construire un deuxième atelier de circuits' },
-    { id: 'expert', text: 'Former un agent logistique expert' },
+    { id: 'recycleur', text: 'Construire le recycleur' },
+    { id: 'r11a', text: 'Recycler 2 objets en trop (bouton Recettes du recycleur)', c: ['surplus+', 2] },
   ] },
   { name: 'La grande série', rodage: true, goals: [
     { id: 'r12a', text: 'Produire 6 droïdes', c: ['made+', 6] },
@@ -354,9 +362,9 @@ export const LEVELS = [
     { id: 'r13a', text: 'Contrôler 6 pièces déclassées', c: ['ctrl+', 6] },
     { id: 'qualiteD', text: 'Former un responsable qualité' },
   ] },
-  { name: 'Recyclage', goals: [
-    { id: 'recycleur', text: 'Construire le recycleur' },
+  { name: 'Le tri', goals: [
     { id: 'r14a', text: 'Recycler 2 rebuts', c: ['recyc+', 2] },
+    { id: 'r14b', text: 'Contrôler 6 pièces déclassées', c: ['ctrl+', 6] },
     { id: 'adjq', text: 'Former un adjoint qualité (chariot de tri)' },
   ] },
   { name: 'Zéro défaut', rodage: true, goals: [
@@ -395,3 +403,21 @@ export const LEVELS = [
 ];
 
 export const other = (id) => (id === 'A' ? 'B' : 'A');
+
+// ---------- recyclage des objets en trop ----------
+// Matières premières contenues dans une unité d'objet, d'après sa recette de base (récursif)
+export const RAW_CONTENT = {};
+function rawOf(k) {
+  if (RAW_CONTENT[k]) return RAW_CONTENT[k];
+  if (ITEMS[k].kind === 'raw') return { [k]: 1 };
+  const rid = Object.keys(RECIPES).find((id) => !RECIPES[id].any && RECIPES[id].out[k]);
+  const out = {};
+  if (rid) {
+    const r = RECIPES[rid], per = r.out[k];
+    for (const [ik, n] of Object.entries(r.in)) for (const [rk, v] of Object.entries(rawOf(ik))) out[rk] = (out[rk] || 0) + (v * n) / per;
+  }
+  return (RAW_CONTENT[k] = out);
+}
+// Ce qu'on peut cocher « en trop » au recycleur : pièces fabriquées (sauf colis et droïdes en caisse) et kits
+export const RECYCLABLE = Object.keys(ITEMS).filter((k) => (ITEMS[k].kind === 'part' && !['colis', 'caisse'].includes(k)) || ITEMS[k].kind === 'kit');
+for (const k of RECYCLABLE) rawOf(k);

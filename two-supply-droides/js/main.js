@@ -239,7 +239,7 @@ function beginGame(resumed) {
 }
 
 // ---------- messages réseau ----------
-const CMDS = new Set(['spec', 'take', 'put', 'putall', 'request', 'recipes', 'buy', 'wear', 'pack', 'ztake', 'zput', 'zputall']);
+const CMDS = new Set(['spec', 'take', 'put', 'putall', 'request', 'recipes', 'buy', 'wear', 'pack', 'ztake', 'zput', 'zputall', 'trash']);
 function hostMessage(m) {
   if (!m || typeof m !== 'object') return;
   const r = app.remote;
@@ -255,6 +255,7 @@ function hostMessage(m) {
       const e = { c: m.c };
       for (const k of ['type', 'item', 'mach', 'outfit', 'slot']) if (typeof m[k] === 'string' || m[k] === null) e[k] = m[k];
       if (Number.isFinite(m.n)) e.n = m.n;
+      if (typeof m.on === 'boolean') e.on = m.on;
       if (Array.isArray(m.sel)) e.sel = m.sel.filter((x) => typeof x === 'string').slice(0, 12);
       r.events.push(e);
       break;

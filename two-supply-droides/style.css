@@ -388,3 +388,16 @@ button, .btn, input, label, a { touch-action: manipulation; }
 .usine-foot { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center; }
 .usine-foot .btn { flex: 1; min-width: 150px; }
 #quit-note { margin: 4px 0 0; text-align: center; }
+
+/* ---------- 0.4.2 ---------- */
+b.warn, .warn { color: var(--yellow); }
+.trash-h { margin: 14px 0 4px; font: 800 17px/1.2 var(--display, 'Barlow Condensed', sans-serif); letter-spacing: 0.02em; }
+.tgrid { display: flex; flex-direction: column; gap: 6px; }
+.tbtn { display: grid; grid-template-columns: 28px minmax(120px, 1fr) auto; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); }
+.tbtn .box { width: 24px; height: 24px; border-radius: 6px; border: 2px solid var(--muted); display: grid; place-items: center; font-weight: 900; color: var(--ink); }
+.tbtn.on { border-color: var(--bad); background: rgba(239, 90, 80, 0.1); }
+.tbtn.on .box { background: var(--bad); border-color: var(--bad); color: #fff; }
+.tname { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: center; }
+.tname .mi { grid-row: span 2; width: 26px; height: 26px; }
+.tname b { font-size: 14.5px; }
+.tname small { color: var(--muted); font-size: 12px; }

@@ -1,10 +1,10 @@
 // Interface : écrans, HUD, menus, commandes tactiles, caméra et repères au-dessus des objets.
 import {
   ITEMS, ITEM_ORDER, RAW, RAW_LEVEL, SAC_MAX, NODE_TYPES, MACHINES, PLOTS, ENTREPOT, CORE, DROIDS, SPEC_ORDER,
-  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, QC_BASES, LABEL_RANGE, REACH, isDecl, other,
+  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, QC_BASES, LABEL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, isDecl, other,
 } from './config.js';
 import { NODES, height, PLOT_BY_ID, plotBox } from './world.js';
-import { postL, postR, plotUnlocked, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, goalProgress, packPrice, waitWhy } from './sim.js';
+import { postL, postR, plotUnlocked, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
 import { boxDist } from './move.js';
 
 const $ = (id) => document.getElementById(id);
@@ -64,6 +64,7 @@ const recipeLine = (rid) => {
   const r = RECIPES[rid];
   if (r.any === 'decl') return `<span class="it">${itemIcon('circuit_d')}</span><span class="arrow">→</span><span class="it">${itemIcon('circuit')}</span><span class="muted">ou</span><span class="it">${itemIcon('circuit_r')}</span>`;
   if (r.any === 'rebut') return `<span class="it">${itemIcon('carcasse_r')}</span><span class="arrow">→</span><span class="it">${itemIcon('fer')}</span><span class="muted">matière d’origine</span>`;
+  if (r.any === 'surplus') return `<span class="it">${itemIcon('isolant')}</span><span class="arrow">→</span><span class="it">${itemIcon('argile')}</span><span class="muted">la moitié des matières</span>`;
   const side = (o) => Object.entries(o).map(([k, n]) => (k === 'droide' ? `<span class="it">🤖 ${n}</span>` : `<span class="it">${itemIcon(k)}${n}</span>`)).join('');
   return `${side(r.in)}<span class="arrow">→</span>${side(r.out)}`;
 };
@@ -242,6 +243,7 @@ export function fillRecettes(st, machId, send) {
     html += `<button class="rrow ${on ? 'on' : ''}" data-r="${rid}" ${ok ? '' : 'disabled'}><span class="box">${on ? '✓' : ''}</span><span class="rname"><b>${r.name}</b><small>${r.time} s${lock ? ' · ' + lock : ''}</small></span><span class="rline">${recipeLine(rid)}</span></button>`;
   }
   html += '</div>';
+  if (m.type === 'recycleur') html += trashHtml(st, m);
   const body = $('recettes-body');
   if (body.dataset.sig === html) return;
   body.dataset.sig = html;
@@ -252,6 +254,29 @@ export function fillRecettes(st, machId, send) {
     const sel = m.sel.includes(rid) ? m.sel.filter((x) => x !== rid) : [...m.sel, rid];
     send({ c: 'recipes', mach: machId, sel });
   }));
+  body.querySelectorAll('.tbtn').forEach((b) => b.addEventListener('click', () => {
+    send({ c: 'trash', mach: machId, item: b.dataset.k, on: !b.classList.contains('on') });
+  }));
+}
+// Fractions lisibles : ½, ¼, 1 ½…
+const frac = (v) => {
+  const w = Math.floor(v + 1e-6), f = Math.round((v - w) * 4);
+  const fs = ['', '¼', '½', '¾'][f] || '';
+  return (w ? String(w) : '') + (w && fs ? ' ' : '') + fs || '0';
+};
+// Recycleur : on coche les objets en trop ; il en garde toujours une réserve à l'entrepôt
+function trashHtml(st, m) {
+  if (!recipeAvail(st, 'surplus')) return '';
+  const trash = m.trash || [];
+  const keys = RECYCLABLE.filter((k) => trash.includes(k) || (st.stock[k] || 0) > 0 || (m.inp[k] || 0) > 0);
+  let h = `<h4 class="trash-h">Objets en trop</h4><p class="sub">Coche ce qui ne te sert plus : le recycleur rend la moitié des matières premières qui ont servi à le fabriquer. Il en laisse toujours ${T.recReserve} à l’entrepôt (${Math.min(T.recReserve, T.kitCap)} pour un kit), et la machine qui le fabrique s’arrête à ${T.recReserve}.</p>`;
+  if (!keys.length) return h + '<p class="muted">Rien à l’entrepôt pour l’instant.</p>';
+  h += '<div class="tgrid">' + keys.map((k) => {
+    const on = trash.includes(k);
+    const back = Object.entries(RAW_CONTENT[k]).map(([rk, v]) => `<span class="it">${itemIcon(rk)}${frac(v / 2)}</span>`).join('');
+    return `<button class="tbtn ${on ? 'on' : ''}" data-k="${k}"><span class="box">${on ? '✓' : ''}</span><span class="tname">${itemIcon(k)}<b>${ITEMS[k].name}</b><small>${st.stock[k] || 0} à l’entrepôt · garde ${reserveOf(k)}</small></span><span class="rline"><span class="muted">1 →</span>${back}</span></button>`;
+  }).join('') + '</div>';
+  return h;
 }
 
 // ---------- menu de spécialisation ----------
@@ -429,13 +454,12 @@ export function unlocksOf(n) {
 export function fillLevelUp(n) {
   const L = LEVELS[n - 1];
   $('lvl-title').textContent = `Niveau ${n} · ${L.name}`;
-  $('lvl-sub').textContent = L.rodage ? 'Niveau de rodage : profitez de votre usine pour atteindre ces objectifs.' : 'Nouveautés débloquées :';
   const u = unlocksOf(n);
+  $('lvl-sub').textContent = L.rodage ? (u.length ? 'Niveau de rodage : profitez de votre usine. Et une nouveauté :' : 'Niveau de rodage : profitez de votre usine pour atteindre ces objectifs.') : 'Nouveautés débloquées :';
   $('lvl-body').innerHTML = (u.length ? `<ul class="unl">${u.map(([k, v]) => `<li><span class="ut">${k}</span>${esc(v)}</li>`).join('')}</ul>` : '')
     + `<h4>Objectifs</h4><ul class="unl goals">${L.goals.map((g) => `<li>${esc(g.text)}</li>`).join('')}</ul>`;
 }
 
-// Appel du partenaire : bord de l'écran qui clignote, grand message, vibration
 // Appel terminé (arrivé sur place ou 15 s écoulées) : le bord arrête de clignoter
 export function callStop() { $('call-flash').classList.remove('on'); $('call-msg').classList.remove('on'); }
 
@@ -477,6 +501,7 @@ export function guardZoom() {
   place();
 }
 
+// Appel du partenaire : bord de l'écran qui clignote, grand message, vibration
 export function callAlert(text, them) {
   const fl = $('call-flash');
   fl.style.setProperty('--cc', PLAYER_COLORS[them].css);
@@ -697,11 +722,13 @@ export function worldLabels(st, myId, me) {
     else if (!m.sel.length) html += sub('Aucune recette : bouton Recettes');
     else {
       const r = RECIPES[m.sel.includes(m.cur) ? m.cur : m.sel[0]];
-      const inp = r.any ? (listItems(Object.fromEntries(Object.entries(m.inp).filter(([k]) => ITEMS[k].kind === r.any))) || `<span class="it miss">${r.any === 'decl' ? 'aucune pièce déclassée' : 'aucun rebut'}</span>`)
+      const inp = r.any ? (listItems(Object.fromEntries(Object.entries(m.inp).filter(([k]) => anyMatch(m, r.any, k)))) || `<span class="it miss">${r.any === 'decl' ? 'aucune pièce déclassée' : r.any === 'surplus' ? 'aucun objet en trop' : 'aucun rebut'}</span>`)
         : Object.keys(r.in).map((k) => `<span class="it ${(m.inp[k] || 0) >= r.in[k] ? '' : 'miss'}">${itemIcon(k)}${m.inp[k] || 0}</span>`).join('');
       const outs = listItems(m.out);
       html += sub(`${r.name}${m.sel.length > 1 ? ` <small>(+${m.sel.length - 1})</small>` : ''}`) + sub(inp + (outs ? ' → ' + outs : '') + (m.operator ? ' · droïde' : '') + (m.nopower ? ' · <b class="bad">sans courant</b>' : ''));
       if (m.run || m.t > 0) html += gauge(m.t / r.time);
+      const cap = m.sel.every((rid) => recipeCapped(st, rid)) ? recipeCapped(st, m.sel[0]) : 0;
+      if (cap) html += sub(`<b class="warn">Stock plein (${cap}) : en pause</b>`);
     }
     add('p' + p.id, p.x, ['assembleur', 'quai'].includes(p.type) ? 3.5 : 2.8, p.z, html);
   }
@@ -728,13 +755,18 @@ export function worldLabels(st, myId, me) {
     add('core', c.x, height(c.x, c.z) + 2.0, c.z, chip('duo', 'Cœur d’assembleur') + pill(side('L'), side('R')) + sub('À porter à deux jusqu’à l’assembleur'));
   }
 
+  if (within(PAUSE.x, PAUSE.z)) {
+    const n = st.droids.filter((d) => d.pose).length;
+    add('pause', PAUSE.x, 2.2, PAUSE.z, chip('solo', 'Coin pause') + sub(n ? `${n} droïde${n > 1 ? 's' : ''} en pause café` : 'Les droïdes sans tâche viennent y prendre un café'));
+  }
+
   for (const d of st.droids) {
     // Étiquettes des droïdes : seulement tout près, pour ne pas surcharger l'usine
     const dd = Math.hypot(d.x - me.x, d.z - me.z);
     if (d.st === 'spec' || dd > (d.st === 'idle' || d.st === 'follow' ? 4.5 : 2.6)) continue;
     const def = DROIDS[d.type];
-    const what = d.st === 'idle' ? ' · libre' : d.st === 'follow' ? ' · te suit' : '';
-    add('d' + d.id, d.x, height(d.x, d.z) + 1.55, d.z, `<div class="dtag" style="--c:${def.css}">${def.name}${what}</div>`);
+    const what = d.st === 'idle' ? ' · libre' : d.st === 'follow' ? ' · te suit' : d.pose ? ' · en pause' : '';
+    add('d' + d.id, d.x, height(d.x, d.z) + (d.pose === 'sit' ? 1.3 : 1.55), d.z, `<div class="dtag" style="--c:${def.css}">${def.name}${what}</div>`);
   }
 
   for (const a of st.animals) {

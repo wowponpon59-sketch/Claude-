@@ -2,7 +2,7 @@
 import {
   REACH, POST_R, SAC_MAX, CARRY_SPEED, OUT_MAX, T, SCREWS, ITEMS, NODE_TYPES, MACHINES, PLOTS, ENTREPOT,
   START, CORE, DROIDS, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_BASES, RAW, RAW_LEVEL, OUTFITS, PACK, CREDITS,
-  SLAB, WORLD, isRaw, isDecl, isRebut, other,
+  SLAB, WORLD, PAUSE, RAW_CONTENT, RECYCLABLE, isRaw, isDecl, isRebut, other,
 } from './config.js';
 import { NODES, ANIMAL_HOMES, PLOT_BY_ID, plotBox, genWorld, slabDist, GATES } from './world.js';
 import { boxDist, obstacles, moveBox, steer } from './move.js';
@@ -25,7 +25,7 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
     droids: [], animals: [],
     work: { A: null, B: null },
     seq: 1, made: 0, animalT: 0,
-    stats: { made: {}, controlled: 0, recycled: 0, orders: 0, heavyFixed: 0, burned: 0, repairs: 0, earned: 0 },
+    stats: { made: {}, controlled: 0, recycled: 0, surplus: 0, orders: 0, heavyFixed: 0, burned: 0, repairs: 0, earned: 0 },
     lv0: null,
     power: { battery: 0, energy: 0, out: false, warned: false },
     gen: { play: 0, lockUntil: 0 },
@@ -43,7 +43,7 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
 
 // Compteurs au début du niveau : les objectifs de rodage comptent ce qui se passe pendant le niveau
 function snapshot(S) {
-  return { made: S.made, earned: S.stats.earned, repairs: S.stats.repairs, ctrl: S.stats.controlled, recyc: S.stats.recycled, orders: S.stats.orders, items: { ...S.stats.made } };
+  return { made: S.made, earned: S.stats.earned, repairs: S.stats.repairs, ctrl: S.stats.controlled, recyc: S.stats.recycled, surplus: S.stats.surplus || 0, orders: S.stats.orders, items: { ...S.stats.made } };
 }
 const nowMs = (S) => S.clock || Date.now();
 
@@ -69,7 +69,9 @@ export function restoreState(S) {
   for (const a of S.animals) if (a.st === 'caught') { a.st = 'wander'; a.by = null; }
   S.gen = S.gen || { play: 0, lockUntil: 0 };
   S.qcRun = S.qcRun || 0;
+  S.stats.surplus = S.stats.surplus || 0;
   if (!S.lv0) S.lv0 = snapshot(S);
+  if (S.lv0.surplus === undefined) S.lv0.surplus = S.stats.surplus;
   return S;
 }
 
@@ -139,12 +141,38 @@ export const isProd = (m) => MACHINES[m.type].recipes.length > 0;
 // Recette « n'importe quelle pièce » (contrôle, recyclage) : la première pièce de la bonne sorte présente
 function anyItem(S, m, kind) {
   for (const [k, n] of Object.entries(m.inp)) {
-    if (n <= 0 || ITEMS[k].kind !== kind) continue;
+    if (n <= 0 || !anyMatch(m, kind, k)) continue;
     const b = ITEMS[k].base;
-    const outs = kind === 'decl' ? [b, b + '_r'] : Object.keys(QC_BASES[b].back);
+    const outs = kind === 'decl' ? [b, b + '_r'] : kind === 'surplus' ? Object.keys(RAW_CONTENT[k]) : Object.keys(QC_BASES[b].back);
     if (outs.every((o) => (m.out[o] || 0) < OUT_MAX)) return k;
   }
   return null;
+}
+
+// Pièce acceptée par une recette « n'importe quelle pièce » (les objets en trop sont ceux cochés au recycleur)
+export const anyMatch = (m, kind, k) => (kind === 'surplus' ? (m.trash || []).includes(k) : ITEMS[k].kind === kind);
+
+// ---------- stock plein : une recette se met en pause à 20 pièces (3 kits) à l'entrepôt ----------
+const capped = (k) => RECYCLABLE.includes(k);
+export function reserveOf(k) { return ITEMS[k].kind === 'kit' ? Math.min(T.recReserve, T.kitCap) : T.recReserve; }
+function trashed(S, k) { const rc = S.machines.recycleur; return !!(rc && (rc.trash || []).includes(k)); }
+export function capOf(S, k) {
+  if (ITEMS[k].kind === 'kit') return T.kitCap;
+  // Un objet coché « en trop » au recycleur n'est plus fabriqué au-delà de la réserve
+  return trashed(S, k) ? T.recReserve : T.stockCap;
+}
+export function stockOf(S, k) { return (S.stock[k] || 0) + Object.values(S.machines).reduce((a, m) => a + (m.out[k] || 0), 0); }
+// Renvoie le plafond atteint par une recette (0 si elle peut produire)
+export function recipeCapped(S, rid) {
+  const r = RECIPES[rid];
+  if (!r || r.any) return 0;
+  for (const k of Object.keys(r.out)) if (capped(k) && stockOf(S, k) >= capOf(S, k) && !goalWants(S, k)) return capOf(S, k);
+  return 0;
+}
+// Un objectif du niveau demande d'en produire : pas de pause tant qu'il n'est pas atteint
+function goalWants(S, k) {
+  const L = LEVELS[S.level];
+  return !!L && L.goals.some((g) => g.c && g.c[0] === 'item+' && g.c[2] === k && !S.goals[g.id]);
 }
 
 export function needOf(S, m) {
@@ -158,6 +186,7 @@ export function needOf(S, m) {
   const target = {};
   for (const rid of m.sel) {
     const r = RECIPES[rid];
+    if (r.any === 'surplus') { for (const k of m.trash || []) target[k] = 4; continue; }
     if (r.any) { for (const k of Object.keys(ITEMS)) if (ITEMS[k].kind === r.any) target[k] = 4; continue; }
     for (const [k, n] of Object.entries(r.in)) target[k] = (target[k] || 0) + n * 2;
   }
@@ -169,6 +198,7 @@ function canMake(S, m, rid) {
   if (r.any) return !!anyItem(S, m, r.any);
   if (!Object.entries(r.in).every(([k, n]) => (m.inp[k] || 0) >= n)) return false;
   for (const k of Object.keys(r.out)) if (k !== 'droide' && (m.out[k] || 0) >= OUT_MAX) return false;
+  if (recipeCapped(S, rid)) return false;
   return true;
 }
 function pickRecipe(S, m) {
@@ -209,7 +239,7 @@ function returnInputs(S, m) {
   const keep = {};
   for (const rid of m.sel) {
     const r = RECIPES[rid];
-    if (r.any) { for (const k of Object.keys(m.inp)) if (ITEMS[k].kind === r.any) keep[k] = true; }
+    if (r.any) { for (const k of Object.keys(m.inp)) if (anyMatch(m, r.any, k)) keep[k] = true; }
     for (const k of Object.keys(r.in)) keep[k] = true;
   }
   const back = {};
@@ -363,10 +393,13 @@ export function waitWhy(S, m) {
   const r = RECIPES[m.sel.includes(m.cur) ? m.cur : m.sel[0]];
   if (!r) return 'aucune recette choisie';
   if (r.any) {
-    const has = Object.entries(m.inp).some(([k, n]) => n > 0 && ITEMS[k].kind === r.any);
-    if (!has) return r.any === 'decl' ? 'rien à contrôler : apporte des pièces déclassées' : 'rien à recycler : apporte des rebuts';
+    if (r.any === 'surplus' && !(m.trash || []).length) return 'coche les objets en trop (bouton Recettes)';
+    const has = Object.entries(m.inp).some(([k, n]) => n > 0 && anyMatch(m, r.any, k));
+    if (!has) return r.any === 'decl' ? 'rien à contrôler : apporte des pièces déclassées' : r.any === 'surplus' ? 'rien à recycler : apporte des objets en trop' : 'rien à recycler : apporte des rebuts';
     return 'sortie pleine : récupère la production';
   }
+  // Toutes les recettes cochées sont au plafond : la machine attend que le stock baisse
+  if (m.sel.length && m.sel.every((rid) => recipeCapped(S, rid))) return `Stock plein (${recipeCapped(S, m.sel[0])}) : en pause`;
   const miss = missingIn(S, m);
   return sum(miss) ? 'il manque ' + fmt(miss) : 'sortie pleine : récupère la production';
 }
@@ -628,6 +661,19 @@ function command(S, id, e) {
       const prev = m.sel.join();
       m.sel = avail.filter((rid) => e.sel.includes(rid));
       if (m.sel.join() !== prev) m.done = 0;
+      if (!m.sel.includes(m.cur)) { m.cur = m.sel[0] || null; m.t = 0; }
+      const back = returnInputs(S, m);
+      if (sum(back)) toast(S, id, 'Rangé à l’entrepôt : ' + fmt(back), 'info');
+      break;
+    }
+    // Objets cochés « en trop » au recycleur
+    case 'trash': {
+      const m = S.machines.recycleur;
+      if (!m || !RECYCLABLE.includes(e.item) || !recipeAvail(S, 'surplus')) return;
+      m.trash = (m.trash || []).filter((k) => k !== e.item);
+      if (e.on) m.trash.push(e.item);
+      if (m.trash.length && !m.sel.includes('surplus')) m.sel.push('surplus');
+      if (!m.trash.length) m.sel = m.sel.filter((rid) => rid !== 'surplus');
       if (!m.sel.includes(m.cur)) { m.cur = m.sel[0] || null; m.t = 0; }
       const back = returnInputs(S, m);
       if (sum(back)) toast(S, id, 'Rangé à l’entrepôt : ' + fmt(back), 'info');
@@ -945,6 +991,15 @@ function produceAny(S, m, r) {
       S.qcRun += 1;
       m.out[b] = (m.out[b] || 0) + 1;
     }
+  } else if (r.any === 'surplus') {
+    // Objet en trop : la moitié des matières premières qui ont servi à le fabriquer (les demi-unités attendent le suivant)
+    S.stats.surplus = (S.stats.surplus || 0) + 1;
+    m.frac = m.frac || {};
+    for (const [rk, v] of Object.entries(RAW_CONTENT[k])) {
+      m.frac[rk] = (m.frac[rk] || 0) + v / 2;
+      const whole = Math.floor(m.frac[rk] + 1e-6);
+      if (whole > 0) { m.out[rk] = (m.out[rk] || 0) + whole; m.frac[rk] = Math.max(0, m.frac[rk] - whole); }
+    }
   } else {
     S.stats.recycled += 1;
     for (const [rk, rn] of Object.entries(QC_BASES[b].back)) m.out[rk] = (m.out[rk] || 0) + rn;
@@ -983,7 +1038,10 @@ function droids(S, dt) {
   const obs = obstacles(S);
   const fcount = { A: 0, B: 0 };
   for (const d of S.droids) {
-    d.moving = false; d.repairing = false;
+    d.moving = false; d.repairing = false; d.pose = null;
+    // Place au coin pause libérée dès que le droïde a repris le travail
+    if (d.seat != null && !(S.time - (d.restAt ?? -9) < 0.6)) d.seat = null;
+    if (d.sat && !(d.st === 'work' && d.job === 'hq')) d.sat = false;
     if (d.st === 'follow') {
       const p = S.players[d.who];
       const k = fcount[d.who]++;
@@ -1009,7 +1067,7 @@ function droids(S, dt) {
     } else if (d.st === 'work' && d.job === 'hq') {
       const fn = BRAINS[d.type];
       if (fn) fn(S, d, dt, obs);
-      else goTo(d, hqSpot(hqIndex(S, d)), dt, obs);
+      else rest(S, d, dt, obs);
     }
   }
 }
@@ -1067,14 +1125,64 @@ export function waypoint(d, pt) {
   return a ? first : aroundSlab(d, first) || first;
 }
 function goTo(d, pt, dt, obs, speed = 3.9) {
+  // Assis au coin pause : il se lève et ressort par le bout du canapé avant de partir
+  if (d.sat) { if (glide(d, sofaEnd(d, pt), dt, 2.4)) d.sat = false; return false; }
   const wp = waypoint(d, pt);
   if (wp) { steer(d, wp.x, wp.z, speed, dt, obs, 0.35); d.moving = true; return false; }
   const r = Math.hypot(pt.x - d.x, pt.z - d.z);
   if (r > 0.35) { steer(d, pt.x, pt.z, speed, dt, obs, 0.35); d.moving = true; return false; }
   return true;
 }
+// ---------- coin pause ----------
+// 6 places assises (2 canapés face à face autour d'une table basse), puis debout autour avec un café
+const SEATS = [
+  ...[-0.62, 0, 0.62].map((x) => ({ x, z: -0.92, rot: 0, sit: true })),
+  ...[-0.62, 0, 0.62].map((x) => ({ x, z: 0.92, rot: Math.PI, sit: true })),
+];
+const STANDS = [[-0.4, 1.9], [0.65, 1.9], [1.68, -0.42], [1.68, 0.42], [-1.68, -0.42], [-1.68, 0.42], [-1.35, -1.95], [1.35, -1.95]];
+export function pauseSpot(i) {
+  if (i < SEATS.length) { const s = SEATS[i]; return { ...s, x: PAUSE.x + s.x, z: PAUSE.z + s.z }; }
+  const j = i - SEATS.length;
+  const [lx, lz] = j < STANDS.length ? STANDS[j] : [-1.6 + ((j - STANDS.length) % 5) * 0.8, 2.75 + Math.floor((j - STANDS.length) / 5) * 0.8];
+  return { x: PAUSE.x + lx, z: PAUSE.z + lz, rot: Math.atan2(-lx, -lz), sit: false };
+}
+// Bout de canapé le plus proche (pour s'asseoir ou se lever sans traverser les meubles)
+function sofaEnd(d, toward) {
+  const lz = d.z - PAUSE.z > 0 ? 0.92 : -0.92;
+  const side = toward.x - PAUSE.x >= 0 ? 1 : -1;
+  return { x: PAUSE.x + side * 1.55, z: PAUSE.z + lz };
+}
+// Glisse en ligne droite (dans le coin pause, sans se cogner aux meubles)
+function glide(d, pt, dt, speed) {
+  const dx = pt.x - d.x, dz = pt.z - d.z, l = Math.hypot(dx, dz);
+  if (l < 0.03) { d.x = pt.x; d.z = pt.z; return true; }
+  const st = Math.min(l, speed * dt);
+  d.x += (dx / l) * st; d.z += (dz / l) * st;
+  d.rot = Math.atan2(dx, dz); d.moving = true;
+  return false;
+}
+// Droïde spécialisé sans tâche : au coin pause, assis avec un café (ou debout autour quand les canapés sont pris)
+function rest(S, d, dt, obs) {
+  d.restAt = S.time;
+  if (d.seat == null) {
+    const taken = new Set(S.droids.filter((x) => x !== d && x.seat != null).map((x) => x.seat));
+    let i = 0;
+    while (taken.has(i)) i++;
+    d.seat = i;
+  }
+  const sp = pauseSpot(d.seat);
+  if (sp.sit) {
+    if (!d.sat) {
+      if (!goTo(d, sofaEnd({ x: sp.x, z: sp.z }, d), dt, obs)) return;
+      d.sat = true;
+    }
+    if (glide(d, sp, dt, 2.2)) { d.rot = sp.rot; d.pose = 'sit'; }
+    return;
+  }
+  if (goTo(d, sp, dt, obs)) { d.rot = sp.rot; d.pose = 'cafe'; }
+}
+
 const hasAdjq = (S) => S.droids.some((x) => x.type === 'adjq' && x.st === 'work');
-function hqIndex(S, d) { return S.droids.filter((x) => x.job === 'hq').indexOf(d); }
 const busySigs = (S, d) => new Set(S.droids.filter((x) => x !== d && x.task && x.task.sig).map((x) => x.task.sig));
 const spotOf = (where) => (where === 'hq' ? HQ : front(PLOT_BY_ID[where]));
 
@@ -1084,7 +1192,7 @@ function haul(S, d, dt, obs, max) {
   if (t.phase === 'pick') {
     if (!goTo(d, spotOf(t.from), dt, obs)) return;
     let q;
-    if (t.from === 'hq') { q = Math.min(max, S.stock[t.item] || 0, t.want || max); if (q > 0) addStock(S, t.item, -q); }
+    if (t.from === 'hq') { q = Math.max(0, Math.min(max, (S.stock[t.item] || 0) - (t.keep || 0), t.want || max)); if (q > 0) addStock(S, t.item, -q); }
     else {
       const m = S.machines[t.from];
       const box = m && MACHINES[m.type].store ? m.inp : m ? m.out : {};
@@ -1129,7 +1237,7 @@ const BRAINS = {
         }
       }
       cands.sort((a, b) => b.score - a.score);
-      if (!cands.length) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
+      if (!cands.length) { rest(S, d, dt, obs); return; }
       d.task = { ...cands[0].task, phase: 'pick', load: 0 };
     }
     haul(S, d, dt, obs, 4);
@@ -1146,6 +1254,12 @@ const BRAINS = {
           if (n <= 0 || isRaw(k)) continue;
           const sig = 'part>' + m.id + k;
           if (busy.has(sig)) continue;
+          if (m.type === 'recycleur' && anyMatch(m, 'surplus', k)) {
+            // Objets en trop : seulement ce qui dépasse la réserve de l'entrepôt, quand il n'y a rien de plus urgent
+            const keep = reserveOf(k), extra = (S.stock[k] || 0) - keep;
+            if (extra > 0) cands.push({ score: 1, task: { from: 'hq', to: m.id, item: k, want: Math.min(n, extra), keep, sig } });
+            continue;
+          }
           const src = Object.values(S.machines).find((x) => x !== m && (x.out[k] || 0) > 0);
           const from = src ? src.id : (S.stock[k] || 0) > 0 ? 'hq' : null;
           if (!from) continue;
@@ -1160,7 +1274,7 @@ const BRAINS = {
         if (from) cands.push({ score: 12, task: { from, to: 'quai', item: 'colis', want: left, sig: 'ship' } });
       }
       cands.sort((a, b) => b.score - a.score);
-      if (!cands.length) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
+      if (!cands.length) { rest(S, d, dt, obs); return; }
       d.task = { ...cands[0].task, phase: 'pick', load: 0 };
     }
     haul(S, d, dt, obs, 4);
@@ -1187,7 +1301,7 @@ const BRAINS = {
       }
       if (rc) for (const [k, n] of Object.entries(S.stock)) if (n > 0 && isRebut(k) && (rc.inp[k] || 0) < 4) push(5, { from: 'hq', to: 'recycleur', item: k, want: 4, sig: 'ar>' + k });
       cands.sort((a, b) => b.score - a.score);
-      if (!cands.length) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
+      if (!cands.length) { rest(S, d, dt, obs); return; }
       d.task = { ...cands[0].task, phase: 'pick', load: 0 };
     }
     haul(S, d, dt, obs, 4);
@@ -1199,7 +1313,7 @@ const BRAINS = {
       const pl = PLOTS.find((p) => plotUnlocked(S, p) && !S.plots[p.id].built && !MACHINES[p.type].core &&
         !S.droids.some((x) => x !== d && x.task && x.task.plot === p.id) &&
         (S.plots[p.id].ready || Object.entries(missingFor(S, p.id)).some(([k, n]) => n > 0 && (S.stock[k] || 0) > 0)));
-      if (!pl) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
+      if (!pl) { rest(S, d, dt, obs); return; }
       d.task = { plot: pl.id, t: 0, sig: 'build' + pl.id };
     }
     const pl = PLOT_BY_ID[d.task.plot], st = S.plots[pl.id];
@@ -1225,7 +1339,7 @@ const BRAINS = {
     if (!d.task) {
       const item = researchTarget(S);
       const nodes = item ? NODES.map((n, i) => ({ n, i })).filter(({ n, i }) => NODE_TYPES[n.type].item === item && S.nodes[i] > 0) : [];
-      if (!nodes.length) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
+      if (!nodes.length) { rest(S, d, dt, obs); return; }
       nodes.sort((a, b) => dist(a.n, d) - dist(b.n, d));
       const { n, i } = nodes[0];
       const r = NODE_TYPES[n.type].r + 0.6, a = Math.atan2(d.x - n.x, d.z - n.z);
@@ -1255,7 +1369,7 @@ const BRAINS = {
   achat(S, d, dt, obs) {
     const emb = S.machines.emballeuse;
     if (!d.task) {
-      if (!emb || (emb.inp.carton || 0) >= 2 || !(S.stock.plastique > 0) || !emb.sel.includes('colis')) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
+      if (!emb || (emb.inp.carton || 0) >= 2 || !(S.stock.plastique > 0) || !emb.sel.includes('colis')) { rest(S, d, dt, obs); return; }
       addStock(S, 'plastique', -1);
       d.task = { phase: 'buy', sig: 'achat' };
     }
@@ -1267,7 +1381,7 @@ const BRAINS = {
     }
   },
   adjoint(S, d, dt, obs) {
-    goTo(d, hqSpot(hqIndex(S, d)), dt, obs);
+    rest(S, d, dt, obs);
     S.adjT -= dt;
     if (S.adjT > 0) return;
     S.adjT = 3;
@@ -1276,7 +1390,7 @@ const BRAINS = {
     if (free && m) { assignDroid(S, free, m); toast(S, 'all', 'L’adjoint de production a placé un ouvrier.', 'info'); }
   },
   chef(S, d, dt, obs) {
-    goTo(d, hqSpot(hqIndex(S, d)), dt, obs);
+    rest(S, d, dt, obs);
     S.chefT -= dt;
     if (S.chefT > 0) return;
     S.chefT = 2;
@@ -1294,7 +1408,7 @@ function repairBrain(S, d, dt, obs, chief) {
     const list = Object.values(S.machines).filter((x) => x.broken && (chief || x.broken === 'light') && !busy.has('fix' + x.id));
     list.sort((a, b) => (b.broken === 'heavy') - (a.broken === 'heavy'));
     const m = list[0];
-    if (!m) { goTo(d, hqSpot(hqIndex(S, d)), dt, obs); return; }
+    if (!m) { rest(S, d, dt, obs); return; }
     d.task = { sig: 'fix' + m.id, mach: m.id, t: 0 };
   }
   const m = S.machines[d.task.mach];
@@ -1438,6 +1552,7 @@ export function goalProgress(S, g) {
     case 'rep+': v = st.repairs - b.repairs; break;
     case 'ctrl+': v = st.controlled - b.ctrl; break;
     case 'recyc+': v = st.recycled - b.recyc; break;
+    case 'surplus+': v = (st.surplus || 0) - (b.surplus || 0); break;
     case 'orders+': v = st.orders - b.orders; break;
     case 'item+': v = (st.made[item] || 0) - (b.items[item] || 0); break;
     case 'work': v = S.droids.filter((d) => d.st === 'work').length; break;
