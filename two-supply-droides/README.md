@@ -65,3 +65,7 @@ Les versions 0.2 et 0.3 restent dans l’historique Git. La version 0.1 (pain) e
 
 Test sur ordinateur : ZQSD ou flèches pour marcher, Espace pour agir, A et R pour tourner la caméra, molette pour zoomer.
 Deux onglets sur le même ordinateur : ajouter `?net=fake` à l’adresse.
+
+## Tests
+
+Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, navigateur, créatures, recyclage). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.
