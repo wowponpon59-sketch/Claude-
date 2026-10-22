@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Two Supply">
 <meta name="theme-color" content="#0e1115">
-<meta name="description" content="Two Supply — Droïdes : version 0.4.2, usine de droïdes en 20 niveaux dans un terrain vague, en solo ou à deux.">
+<meta name="description" content="Two Supply — Droïdes : version 0.4.3, usine de droïdes en 20 niveaux dans un terrain vague, en solo ou à deux.">
 <title>Two Supply — Droïdes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -50,7 +50,7 @@
       <button id="btn-zout" class="round tiny" type="button" aria-label="Dézoomer">−</button>
     </div>
     <button id="btn-ctx" class="ctx-btn" type="button" hidden></button>
-    <button id="btn-call" class="round small" type="button" aria-label="Appeler ton partenaire">
+    <button id="btn-call" class="round small" type="button" aria-label="Appeler ton partenaire (ou le coéquipier IA)">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4zm12.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
       <span>Appeler</span>
     </button>
@@ -74,7 +74,7 @@
     <div class="brand">
       <div class="hazard"></div>
       <h1>TWO<span>SUPPLY</span></h1>
-      <p class="kicker">Droïdes · version 0.4.2 · 20 niveaux</p>
+      <p class="kicker">Droïdes · version 0.4.3 · 20 niveaux</p>
       <p class="tag">Un terrain vague, des débris, des créatures de ferraille. Construisez à la main l’usine qui fabriquera vos premiers droïdes, puis faites-en vos employés.</p>
     </div>
     <div class="home-actions">
@@ -135,7 +135,7 @@
       <li>Près d’une machine, le bouton <b>Recettes</b> choisit ce qu’elle fabrique. Plusieurs recettes cochées : elle en fait 1 de chaque à tour de rôle.</li>
       <li>Les boutons <b>Équipe</b> et <b>Vestiaire</b> (en haut) montrent vos droïdes et leurs tenues, achetées avec les crédits gagnés.</li>
       <li><span class="badge solo"></span> blanc : seul. <span class="badge duo"></span> doré à bandes : à <b>deux</b> (monter une machine, porter le cœur d’assembleur, attraper une créature).</li>
-      <li id="howto-solo">En solo, ton <b>coéquipier IA</b> te suit et prend tout seul l’autre côté des tâches à deux.</li>
+      <li id="howto-solo">En solo, ton <b>coéquipier IA</b> attend au coin pause et vient prendre tout seul l’autre côté des tâches à deux. Le bouton d’appel le fait venir près de toi.</li>
     </ol>
     <button id="btn-go" class="btn primary" type="button">C’est parti</button>
   </div>

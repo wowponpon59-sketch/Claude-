@@ -490,24 +490,41 @@ export class Renderer {
   render(root, dt = 0) {
     const gl = this.gl, e = this.env;
     this.time += dt;
-    const opaque = [], clear = [];
-    const walk = (n, parent) => {
-      if (!n.visible) return;
-      m4.compose(n.local, n.pos, n.rot, n.scl);
-      m4.mul(parent, n.local, n.world);
-      if (n.mesh) (n.mesh.mat.opacity < 1 || n.mesh.mat.pattern === P.water ? clear : opaque).push(n);
-      for (const c of n.children) walk(c, n.world);
-    };
-    walk(root, m4.ident());
-
-    // 1. Carte d'ombres
+    // Vue de la lumière (carte d'ombres) : elle suit la caméra
+    const S = 30, res = this.shadowSize;
     if (this.shadows) {
-      const S = 30, res = this.shadowSize;
       const t = this.target, L = e.sun;
       const snap = (2 * S) / res;
       const tx = Math.round(t[0] / snap) * snap, tz = Math.round(t[2] / snap) * snap;
       const eye = [tx - L[0] * 70, -L[1] * 70, tz - L[2] * 70];
       this.shadowVP = m4.mul(m4.ortho(-S, S, -S, S, 5, 150), m4.lookAt(eye, [tx, 0, tz], [0, 1, 0]));
+    }
+    // Tri des objets : ce qui est hors de l'écran n'est pas dessiné, ce qui est hors de la zone d'ombre ne projette pas d'ombre.
+    // Un nœud avec cullR (rayon en mètres) est testé avec tout son contenu.
+    const camP = planes(this.vp), shP = this.shadows ? planes(this.shadowVP) : null;
+    const tg = this.target;
+    const opaque = [], clear = [], casters = [];
+    const walk = (n, parent, main, shad) => {
+      if (!n.visible) return;
+      m4.compose(n.local, n.pos, n.rot, n.scl);
+      m4.mul(parent, n.local, n.world);
+      if (n.cullR) {
+        const w = n.world, r = n.cullR;
+        if (main) main = sphereIn(camP, w[12], w[13], w[14], r);
+        // Petits objets (droïdes, créatures…) : ombre seulement près de la caméra
+        if (shad) shad = sphereIn(shP, w[12], w[13], w[14], r) && (r > 2.5 || Math.hypot(w[12] - tg[0], w[14] - tg[2]) < 20);
+        if (!main && !shad) return;
+      }
+      if (n.mesh) {
+        if (main) (n.mesh.mat.opacity < 1 || n.mesh.mat.pattern === P.water ? clear : opaque).push(n);
+        if (shad && n.mesh.mat.cast && !n.mesh.mat.unlit && n.mesh.mat.opacity >= 1) casters.push(n);
+      }
+      for (const c of n.children) walk(c, n.world, main, shad);
+    };
+    walk(root, m4.ident(), true, this.shadows);
+
+    // 1. Carte d'ombres
+    if (this.shadows) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowFb);
       gl.viewport(0, 0, res, res);
       gl.clearColor(1, 1, 1, 1);
@@ -518,8 +535,7 @@ export class Renderer {
       gl.enableVertexAttribArray(D.a.pos);
       gl.disable(gl.BLEND);
       gl.cullFace(gl.FRONT);
-      for (const n of opaque) {
-        if (!n.mesh.mat.cast || n.mesh.mat.unlit) continue;
+      for (const n of casters) {
         const b = this.buffers(n.mesh.geo);
         gl.bindBuffer(gl.ARRAY_BUFFER, b.pos);
         gl.vertexAttribPointer(D.a.pos, 3, gl.FLOAT, false, 0, 0);
@@ -569,6 +585,7 @@ export class Renderer {
       gl.disable(gl.BLEND);
     }
     this.drawCalls = opaque.length + clear.length;
+    this.shadowCalls = casters.length;
   }
 
   draw(n) {
@@ -600,5 +617,19 @@ export class Renderer {
   }
 }
 
+// Plans du champ de vision d'une matrice (colonnes) : un objet est visible s'il n'est derrière aucun plan
+function planes(m) {
+  const out = [];
+  for (const [i, sg] of [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1], [2, -1]]) {
+    const a = m[3] + sg * m[i], b = m[7] + sg * m[4 + i], c = m[11] + sg * m[8 + i], d = m[15] + sg * m[12 + i];
+    const l = Math.hypot(a, b, c) || 1;
+    out.push([a / l, b / l, c / l, d / l]);
+  }
+  return out;
+}
+function sphereIn(pl, x, y, z, r) {
+  for (const p of pl) if (p[0] * x + p[1] * y + p[2] * z + p[3] < -r) return false;
+  return true;
+}
 function norm(v) { const l = Math.hypot(...v); return v.map((x) => x / l); }
 function dist2(w, c) { const dx = w[12] - c[0], dy = w[13] - c[1], dz = w[14] - c[2]; return dx * dx + dy * dy + dz * dz; }

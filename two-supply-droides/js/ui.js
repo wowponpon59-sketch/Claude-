@@ -1,10 +1,10 @@
 // Interface : écrans, HUD, menus, commandes tactiles, caméra et repères au-dessus des objets.
 import {
   ITEMS, ITEM_ORDER, RAW, RAW_LEVEL, SAC_MAX, NODE_TYPES, MACHINES, PLOTS, ENTREPOT, CORE, DROIDS, SPEC_ORDER,
-  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, QC_BASES, LABEL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, isDecl, other,
+  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, QC_BASES, LABEL_RANGE, ANIMAL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, other,
 } from './config.js';
 import { NODES, height, PLOT_BY_ID, plotBox } from './world.js';
-import { postL, postR, plotUnlocked, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
+import { postL, postR, plotUnlocked, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, genText, apart, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
 import { boxDist } from './move.js';
 
 const $ = (id) => document.getElementById(id);
@@ -111,10 +111,9 @@ export function updateHud(st, myId, extra) {
     const gen = st.machines.generateur;
     let txt, bad = false;
     if (gen) {
-      const units = genFill(st, gen);
-      const left = Math.max(0, Math.ceil((T.overheatAt - st.gen.play) / 60));
-      bad = gen.broken || units === 0;
-      txt = gen.broken ? 'Générateur en panne' : `Générateur ${units}/${T.genCap} · surchauffe dans ${left} min`;
+      // La surchauffe n'est pas annoncée à l'avance : on la découvre quand elle arrive
+      bad = gen.broken || (genFill(st, gen, 'charbon') + genFill(st, gen, 'bois') === 0);
+      txt = gen.broken ? 'Générateur en panne' : `Générateur · ${genText(st, gen)}`;
     } else {
       bad = st.power.battery <= 0;
       txt = bad ? 'Plus de courant : construis le générateur' : `Batterie · ${clock(st.power.battery)}`;
@@ -124,7 +123,7 @@ export function updateHud(st, myId, extra) {
     pw.classList.toggle('bad', bad);
   } else pw.hidden = true;
 
-  $('mode-name').textContent = st.mode === 'solo' ? `Solo · IA : ${extra.bot || 'te suit'}` : 'À deux';
+  $('mode-name').textContent = st.mode === 'solo' ? `Solo · IA : ${extra.bot || 'en pause café'}` : 'À deux';
 
   const btn = $('btn-action');
   const h = me.hint;
@@ -135,7 +134,7 @@ export function updateHud(st, myId, extra) {
   const icon = h ? (h.kind === 'duo' ? ICON.duo : ICON.solo) : ICON.hand;
   const ic = $('action-icon');
   if (ic.dataset.k !== icon) { ic.innerHTML = icon; ic.dataset.k = icon; }
-  $('btn-call').classList.toggle('hidden', st.mode === 'solo');
+  $('btn-call').classList.remove('hidden');
 
   // Bouton contextuel : recettes d'une machine ou menu de l'entrepôt
   const ctx = contextOf(st, extra.me);
@@ -168,7 +167,7 @@ export function contextOf(st, me) {
 // ---------- menu de l'entrepôt ----------
 export function fillEntrepot(st, myId, send) {
   const p = st.players[myId];
-  const keys = ITEM_ORDER.filter((k) => !isDecl(k) && ((st.stock[k] || 0) > 0 || (p.sac[k] || 0) > 0));
+  const keys = ITEM_ORDER.filter((k) => !apart(k) && ((st.stock[k] || 0) > 0 || (p.sac[k] || 0) > 0));
   const room = SAC_MAX - count(p.sac);
   let html = `<p class="sub">Sac : ${count(p.sac)}/${SAC_MAX}. Prends exactement ce dont tu as besoin.</p>`;
   html += '<div class="erows">';
@@ -180,7 +179,7 @@ export function fillEntrepot(st, myId, send) {
   }
   html += '</div>';
   if (keys.some((k) => p.sac[k])) html += '<button class="btn small-btn" data-a="putall">Tout déposer</button>';
-  if (ITEM_ORDER.some((k) => isDecl(k) && p.sac[k])) html += '<p class="muted">Les pièces déclassées de ton sac vont à la zone des déclassés.</p>';
+  if (ITEM_ORDER.some((k) => apart(k) && p.sac[k])) html += '<p class="muted">Les déclassés et les rebuts de ton sac vont à la zone des déclassés.</p>';
   if (st.droids.some((d) => d.type === 'recherche')) {
     const known = RAW.filter((k) => RAW_LEVEL[k] <= st.level);
     const req = st.request;
@@ -204,10 +203,10 @@ export function fillEntrepot(st, myId, send) {
 export function fillZone(st, myId, send) {
   const p = st.players[myId], z = st.machines.zone;
   if (!z) return;
-  const keys = ITEM_ORDER.filter((k) => isDecl(k) && ((z.inp[k] || 0) > 0 || (p.sac[k] || 0) > 0));
+  const keys = ITEM_ORDER.filter((k) => apart(k) && ((z.inp[k] || 0) > 0 || (p.sac[k] || 0) > 0));
   const room = SAC_MAX - count(p.sac);
-  let html = '<p class="sub">Pièces déclassées en attente de contrôle. Au poste qualité, 1 sur 2 part au rebut (1 sur 3 avec le responsable qualité).</p><div class="erows">';
-  if (!keys.length) html += '<p class="muted">Aucune pièce déclassée pour l’instant.</p>';
+  let html = '<p class="sub">Pièces déclassées en attente de contrôle, et rebuts à recycler. Au poste qualité, 1 sur 2 part au rebut (1 sur 3 avec le responsable qualité).</p><div class="erows">';
+  if (!keys.length) html += '<p class="muted">Aucune pièce déclassée ni rebut pour l’instant.</p>';
   for (const k of keys) {
     const s = z.inp[k] || 0, b = p.sac[k] || 0;
     html += `<div class="erow"><span class="ename">${itemIcon(k)}<b>${ITEMS[k].name}</b></span><span class="enum">${s}<small>zone</small></span><span class="enum">${b}<small>sac</small></span>
@@ -641,7 +640,7 @@ const pill = (l, r) => `<div class="pill"><i class="${l || ''}"></i><i class="${
 const sub = (html) => `<div class="wsub">${html}</div>`;
 
 // Où se trouve l'objectif en cours (pour le repère toujours visible)
-const ITEM_PLOT = { circuit: 'circuits', isolant: 'ceramique', fil: 'trefileuse', tole: 'laminoir', circuitA: 'circuits' };
+const ITEM_PLOT = { carcasse: 'forge', circuit: 'circuits', isolant: 'ceramique', fil: 'trefileuse', tole: 'laminoir', circuitA: 'circuits' };
 export function objectiveSpot(st) {
   if (st.won) return null;
   const g = LEVELS[st.level].goals.find((x) => !st.goals[x.id]);
@@ -657,7 +656,8 @@ export function objectiveSpot(st) {
   if (kind === 'made+' || kind === 'droids') return at('assembleur');
   if (kind === 'item+') return at(ITEM_PLOT[item]);
   if (kind === 'ctrl+') return at('qualite');
-  if (kind === 'recyc+') return at('recycleur');
+  if (kind === 'recyc+' || kind === 'surplus+') return at('recycleur');
+  if (kind === 'spec+') return at('atelier');
   if (kind === 'orders+') return at('quai');
   return null;
 }
@@ -671,22 +671,24 @@ export function worldLabels(st, myId, me) {
   const pos = (id) => (id === myId ? me : st.players[id]);
   const near = (pt) => ['A', 'B'].find((id) => Math.hypot(pos(id).x - pt.x, pos(id).z - pt.z) < POST_R);
   const within = (x, z, extra = 0) => Math.hypot(x - me.x, z - me.z) < LABEL_RANGE + extra;
+  // Bâtiments et machines : le nom n'apparaît que tout près (à moins de 3 m de leur bord)
+  const close = (box) => boxDist(me, box) < LABEL_RANGE;
 
   NODES.forEach((n, i) => {
-    if (!within(n.x, n.z)) return;
+    if (!within(n.x, n.z, NODE_TYPES[n.type].r)) return;
     const t = NODE_TYPES[n.type], q = st.nodes[i];
     const y = height(n.x, n.z) + (n.type === 'epave' ? 1.9 : 1.6);
     add('n' + i, n.x, y, n.z, chip('solo', `${itemIcon(t.item)} ${t.name}`, q ? '' : ' dim') + sub(q ? `${q} à fouiller` : `vide · ${Math.ceil(st.nodeT[i])} s`));
   });
 
-  if (within(ENTREPOT.x, ENTREPOT.z, 1)) {
+  if (close(ENTREPOT)) {
     const keys = ITEM_ORDER.filter((k) => (st.stock[k] || 0) > 0);
     const top = Object.fromEntries(keys.slice(0, 5).map((k) => [k, st.stock[k]]));
     add('entrepot', ENTREPOT.x, 2.6, ENTREPOT.z, chip('solo', 'Entrepôt') + sub(keys.length ? listItems(top) + (keys.length > 5 ? ` <small>+${keys.length - 5}</small>` : '') : 'vide'));
   }
 
   for (const p of PLOTS) {
-    if (!within(p.x, p.z, 1.5)) continue;
+    if (!close(plotBox(p))) continue;
     const ps = st.plots[p.id], def = MACHINES[p.type];
     const name = def.name + (p.id.endsWith('2') ? ' n°2' : '');
     if (!plotUnlocked(st, p)) { add('p' + p.id, p.x, 1.0, p.z, sub(`${name} · niveau ${p.level}`)); continue; }
@@ -713,8 +715,7 @@ export function worldLabels(st, myId, me) {
     } else if (m.broken) html += sub('Panne : garder appuyé pour réparer');
     else if (m.type === 'generateur') {
       const hot = st.gen.lockUntil > Date.now();
-      html += sub(hot ? '<b class="bad">Surchauffe : il refroidit</b>' : `${itemIcon('charbon')}${m.inp.charbon || 0} ${itemIcon('bois')}${m.inp.bois || 0} · ${genFill(st, m)}/${T.genCap}` + (m.run ? ' · en marche' : ''));
-      if (!hot) html += sub(`surchauffe dans ${Math.max(0, Math.ceil((T.overheatAt - st.gen.play) / 60))} min`);
+      html += sub(hot ? '<b class="bad">Surchauffe : il refroidit</b>' : `${itemIcon('charbon')}${genFill(st, m, 'charbon')}/${T.genCap} ${itemIcon('bois')}${genFill(st, m, 'bois')}/${T.genCap}` + (m.run ? ' · en marche' : ''));
     }
     else if (m.type === 'zone') html += sub(listItems(m.inp) || 'Vide : déposez ici les pièces déclassées');
     else if (m.type === 'quai') { const o = activeOrders(st); html += sub(o.length ? o.map((x) => `${itemIcon('colis')}${x.left} · ${clock(x.t)}`).join(' &nbsp; ') : 'Pas de commande'); }
@@ -741,10 +742,10 @@ export function worldLabels(st, myId, me) {
     if (d > BUBBLE_RANGE) continue;
     const keys = ITEM_ORDER.filter((k) => (m.out[k] || 0) > 0).slice(0, 3);
     const y = ['assembleur', 'quai'].includes(p.type) ? 3.5 : 2.8;
-    add('o' + m.id, p.x, y + (d < LABEL_RANGE + 1.5 ? 1.9 : 0.4), p.z, `<div class="outb">${keys.map((k) => `<span class="it">${itemIcon(k)}${m.out[k]}</span>`).join('')}</div>`);
+    add('o' + m.id, p.x, y + (close(plotBox(p)) ? 1.9 : 0.4), p.z, `<div class="outb">${keys.map((k) => `<span class="it">${itemIcon(k)}${m.out[k]}</span>`).join('')}</div>`);
   }
 
-  if (!st.core.placed && within(st.core.x, st.core.z, 2)) {
+  if (!st.core.placed && within(st.core.x, st.core.z, ANIMAL_RANGE - LABEL_RANGE)) {
     const c = st.core;
     const side = (s) => {
       const who = ['A', 'B'].find((id) => c.hand[id] === s);
@@ -755,7 +756,7 @@ export function worldLabels(st, myId, me) {
     add('core', c.x, height(c.x, c.z) + 2.0, c.z, chip('duo', 'Cœur d’assembleur') + pill(side('L'), side('R')) + sub('À porter à deux jusqu’à l’assembleur'));
   }
 
-  if (within(PAUSE.x, PAUSE.z)) {
+  if (within(PAUSE.x, PAUSE.z, 2)) {
     const n = st.droids.filter((d) => d.pose).length;
     add('pause', PAUSE.x, 2.2, PAUSE.z, chip('solo', 'Coin pause') + sub(n ? `${n} droïde${n > 1 ? 's' : ''} en pause café` : 'Les droïdes sans tâche viennent y prendre un café'));
   }
@@ -770,7 +771,7 @@ export function worldLabels(st, myId, me) {
   }
 
   for (const a of st.animals) {
-    if (!within(a.x, a.z) || a.st === 'installed') continue;
+    if (!within(a.x, a.z, ANIMAL_RANGE - LABEL_RANGE) || a.st === 'installed') continue;
     const def = ANIMALS[a.sp];
     const y = height(a.x, a.z) + (a.sp === 'vitrelle' ? 2.4 : 1.4);
     let s = '';

@@ -114,8 +114,8 @@ function collect(id) {
   const f = frontOf(id); at(f.x, f.z);
   if (Object.keys(m.out).length) { assert.match(label(), /Récupérer|Affecter|Reprendre|Installer/, label()); if (/Récupérer/.test(label())) tap(); }
   deposit();
-  // les pièces déclassées restent dans le sac : direction la zone
-  if (S.machines.zone && Object.keys(S.players.A.sac).some((k) => ITEMS[k].kind === 'decl')) { const z = frontOf('zone'); at(z.x, z.z); assert.match(label(), /Déposer les déclassés/, label()); tap(); }
+  // les pièces déclassées et les rebuts restent dans le sac : direction la zone
+  if (S.machines.zone && Object.keys(S.players.A.sac).some((k) => ['decl', 'rebut'].includes(ITEMS[k].kind))) { const z = frontOf('zone'); at(z.x, z.z); assert.match(label(), /Déposer à la zone/, label()); tap(); }
 }
 // Produit n fois la recette rid (matières fournies) et attend la production réelle
 function make(id, rid, n = 1) {
@@ -162,7 +162,11 @@ function train(type) {
   assert.equal(d.st, 'spec', 'formation ' + type);
   run(T.spec + 0.5);
   assert.equal(d.type, type);
-  if (DROIDS[type].work === 'hq') { atHQ(); run(1.2); assert.match(label(), /Mettre au travail/, 'HQ: ' + label()); tap(); assert.equal(d.job, 'hq'); }
+  if (DROIDS[type].work === 'hq') {
+    // l'adjoint qualité se met au travail à la zone des déclassés, les autres à l'entrepôt
+    if (DROIDS[type].at) { const z = frontOf(DROIDS[type].at); at(z.x, z.z); } else atHQ();
+    run(1.2); assert.match(label(), /Mettre au travail/, 'HQ: ' + label()); tap(); assert.equal(d.job, 'hq');
+  }
   log('formé :', DROIDS[type].name);
   return d;
 }
@@ -194,14 +198,16 @@ function capture() {
   assert.equal(got.st, 'installed', 'créature installée : ' + label());
 }
 // Joue les objectifs de rodage (et les objectifs chiffrés) jusqu'à les réussir
-const MAKE_ITEM = { circuit: ['circuits', 'circuit'], isolant: ['ceramique', 'isolant'], fil: ['trefileuse', 'fil'], tole: ['laminoir', 'tole'], circuitA: ['circuits', 'circuitA'] };
+const MAKE_ITEM = { carcasse: ['forge', 'carcasse'], circuit: ['circuits', 'circuit'], isolant: ['ceramique', 'isolant'], fil: ['trefileuse', 'fil'], tole: ['laminoir', 'tole'], circuitA: ['circuits', 'circuitA'] };
 function freeMachine() { return Object.values(S.machines).find((m) => MACHINES[m.type].recipes.length && !m.operator && m.sel.length && m.type !== 'qualite' && m.type !== 'recycleur'); }
 function satisfy() {
   const L = LEVELS[S.level];
   for (const g of L.goals) {
     if (!g.c || S.goals[g.id]) continue;
     const [kind, n, item] = g.c;
-    const prog = () => SIM.goalProgress(S, g)[0];
+    const lv0 = S.level;
+    // l'objectif peut faire passer le niveau : les compteurs repartent alors de zéro
+    const prog = () => (S.level !== lv0 || S.goals[g.id] ? n : SIM.goalProgress(S, g)[0]);
     let guard = 0;
     while (!S.goals[g.id] && prog() < n && guard++ < 60) {
       fuel();
@@ -221,6 +227,7 @@ function satisfy() {
       else if (kind === 'recyc+') { if (!S.machines.recycleur.sel.includes('recyc')) setRecipes('recycleur', [...S.machines.recycleur.sel, 'recyc']); feed('recycleur', { carcasse_r: 1, circuit_r: 1 }); operate('recycleur', () => prog() >= n, 60); collect('recycleur'); }
       else if (kind === 'surplus+') { const f = frontOf('recycleur'); at(f.x, f.z); cmd({ c: 'trash', mach: 'recycleur', item: 'isolant', on: true }); feed('recycleur', { isolant: n }); operate('recycleur', () => prog() >= n, 60); collect('recycleur'); cmd({ c: 'trash', mach: 'recycleur', item: 'isolant', on: false }); }
       else if (kind === 'orders+') deliverOrder();
+      else if (kind === 'spec+') train(['maintenance', 'logistique'][guard % 2]);
       tick();
     }
     assert.ok(S.goals[g.id] || prog() >= n, `objectif ${g.id} (${prog()}/${n})`);
@@ -334,7 +341,17 @@ assert.equal(SIM.genUnits(S.machines.generateur) + S.stats.burned, 3, 'charbon c
 run(1);
 assert.ok(S.stats.burned >= 1, 'le générateur brûle sa première unité');
 const e0 = S.power.energy;
-assert.ok(e0 > 700 && e0 <= 720, '1 unité = 12 minutes : ' + e0);
+assert.ok(e0 > 340 && e0 <= 360, '1 unité = 6 minutes : ' + e0);
+// 5 charbons et 5 bois au maximum
+{
+  const gen = S.machines.generateur;
+  S.players.A.sac = { charbon: 9, bois: 9 };
+  f = frontOf('generateur'); at(f.x, f.z); assert.match(label(), /Charger le générateur \(charbon/, label()); tap();
+  assert.equal(SIM.genFill(S, gen, 'charbon'), 5, '5 charbons au plus');
+  assert.equal(SIM.genFill(S, gen, 'bois'), 5, '5 bois au plus');
+  assert.match(label(), /charbon 5\/5 · bois 5\/5/, label());
+  deposit();
+}
 g = 0; while (!Object.values(S.machines).some((m) => m.broken === 'heavy') && g++ < 30 * 90) { if (!Object.values(S.machines).some((m) => m.run)) { feed('forge', { fer: 4, eau: 2 }); } tick(); }
 const hv = Object.values(S.machines).find((m) => m.broken === 'heavy');
 assert.ok(hv, 'panne lourde arrivée');
@@ -359,6 +376,8 @@ waitLevel(7);
 assert.equal(LEVELS[S.level].name, 'Les bâtisseurs');
 buildPlot('trefileuse');
 satisfy();
+buildPlot('recycleur');
+assert.deepEqual(SIM.machineRecipes(S, S.machines.recycleur), ['surplus'], 'recycleur au niveau 7 : objets en trop');
 train('ingenieur');
 waitLevel(8);
 
@@ -407,8 +426,8 @@ g = 0; while (!((asm.inp.carcasse || 0) > 0 && (asm.inp.circuit || 0) > 0) && g+
 assert.ok(asm.inp.carcasse > 0 && asm.inp.circuit > 0, 'l’expert approvisionne l’assembleur');
 waitLevel(11);
 
-// ========== NIVEAU 11 : deux lignes et recycleur ==========
-buildPlot('forge2'); buildPlot('circuits2'); buildPlot('recycleur');
+// ========== NIVEAU 11 : deux lignes ==========
+buildPlot('forge2'); buildPlot('circuits2');
 // --- coin pause : les droïdes sans tâche s'assoient (6 places), les autres restent debout avec un café
 {
   for (const m of Object.values(S.machines)) { m.broken = null; }
@@ -452,7 +471,7 @@ buildPlot('forge2'); buildPlot('circuits2'); buildPlot('recycleur');
 // --- recyclage des objets en trop : réserve de 10 (3 pour les kits), la moitié des matières premières rendue
 {
   const rc = S.machines.recycleur;
-  assert.deepEqual(SIM.machineRecipes(S, rc), ['surplus'], 'recycleur au niveau 11 : objets en trop (les rebuts viendront avec le contrôle qualité)');
+  assert.deepEqual(SIM.machineRecipes(S, rc), ['surplus'], 'recycleur : objets en trop (les rebuts viendront avec le contrôle qualité)');
   S.stock.isolant = 16; S.stock.k_outils = 6;
   const f = frontOf('recycleur'); at(f.x, f.z);
   cmd({ c: 'trash', mach: 'recycleur', item: 'isolant', on: true });

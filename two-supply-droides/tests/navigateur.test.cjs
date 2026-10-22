@@ -177,7 +177,8 @@ const assert = (c, m) => { if (!c) throw new Error('ÉCHEC : ' + m); console.log
   console.log('SURCHAUFFE');
   await resume(A, L6);
   await A.waitForFunction(() => window.__ts && window.__ts.app.playing);
-  assert(await until(A, () => /surchauffe dans/.test(document.getElementById('power').textContent)), 'indicateur : surchauffe dans N min');
+  assert(await until(A, () => /Générateur · charbon \d\/5 · bois \d\/5/.test(document.getElementById('power').textContent)), 'indicateur : charbon et bois sur 5 (' + await A.evaluate(() => document.getElementById('power').textContent) + ')');
+  assert(!(await A.evaluate(() => /surchauffe/.test(document.getElementById('power').textContent + document.getElementById('labels').textContent))), 'la surchauffe n’est pas annoncée à l’avance');
   await A.screenshot({ path: OUT + '07-courant.png' });
   await A.evaluate(() => { const S = window.__ts.app.sim; S.gen.play = 3599.8; });
   assert(await until(A, () => document.getElementById('screen-lock').classList.contains('active')), 'écran de surchauffe');
@@ -242,10 +243,10 @@ const assert = (c, m) => { if (!c) throw new Error('ÉCHEC : ' + m); console.log
   // ---------- 0.4.2 : métiers plus tôt, recycleur, coin pause ----------
   console.log('0.4.2');
   {
-    const lv = await A.evaluate(async () => { const UI = await import('./js/ui.js'); return [UI.unlocksOf(5).map((x) => x.join(' ')).join(' | '), UI.unlocksOf(10).map((x) => x.join(' ')).join(' | '), UI.unlocksOf(11).map((x) => x.join(' ')).join(' | ')]; });
+    const lv = await A.evaluate(async () => { const UI = await import('./js/ui.js'); return [UI.unlocksOf(5).map((x) => x.join(' ')).join(' | '), UI.unlocksOf(10).map((x) => x.join(' ')).join(' | '), UI.unlocksOf(7).map((x) => x.join(' ')).join(' | ')]; });
     assert(/Agent de recherche/.test(lv[0]), 'niveau 5 : agent de recherche (' + lv[0] + ')');
     assert(/Agent logistique expert/.test(lv[1]), 'niveau 10 : agent logistique expert (' + lv[1] + ')');
-    assert(/Recycleur/.test(lv[2]), 'niveau 11 : recycleur (' + lv[2] + ')');
+    assert(/Recycleur/.test(lv[2]), 'niveau 7 : recycleur (' + lv[2] + ')');
     // le recycleur : on coche les objets en trop
     await A.evaluate(async () => {
       const C = await import('./js/config.js');
@@ -268,6 +269,26 @@ const assert = (c, m) => { if (!c) throw new Error('ÉCHEC : ' + m); console.log
     assert(await until(A, () => /pause café/.test([...document.querySelectorAll('#labels .wsub')].map((e) => e.textContent).join(' '))), 'étiquette « en pause café »');
     await sleep(1500);
     await A.screenshot({ path: OUT + '14c-coin-pause.png' });
+  }
+
+  // ---------- 0.4.3 : coéquipier au canapé, appel en solo, noms de près, moins d'objets dessinés ----------
+  console.log('0.4.3');
+  {
+    assert(await until(A, () => window.__ts.app.bot.seated), 'le coéquipier IA est assis au canapé');
+    assert(await until(A, () => /pause café/.test(document.getElementById('mode-name').textContent)), 'mode : « IA : en pause café »');
+    await A.screenshot({ path: OUT + '14d-coequipier-canape.png' });
+    assert(await A.evaluate(() => !document.getElementById('btn-call').classList.contains('hidden')), 'bouton d’appel visible en solo');
+    await A.click('#btn-call');
+    await A.evaluate(() => window.__ts.advance(6));
+    assert(await until(A, () => /te rejoint/.test(document.getElementById('mode-name').textContent)), 'appelé, le coéquipier vient');
+    const lbl = async (x, z) => { await A.evaluate(([x, z]) => window.__ts.tp(x, z, Math.PI), [x, z]); await sleep(1200); return A.evaluate(() => document.getElementById('labels').textContent); };
+    assert(/Forge/.test(await lbl(-17, -10 + 1.2 + 1.5)), 'nom de la forge à 1,5 m');
+    assert(!/Forge/.test(await lbl(-17, -10 + 1.2 + 6)), 'pas de nom de la forge à 6 m');
+    await A.evaluate(() => window.__ts.tp(0, 3, Math.PI));
+    await sleep(1500);
+    const dc = await A.evaluate(() => [window.__ts.renderer().drawCalls, window.__ts.renderer().shadowCalls, window.__ts.app.sim.droids.length]);
+    console.log('  objets dessinés :', dc[0], '· ombres :', dc[1], '· droïdes :', dc[2]);
+    await A.screenshot({ path: OUT + '14e-usine.png' });
   }
   await ctx.close();
 

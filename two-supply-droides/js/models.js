@@ -663,13 +663,16 @@ export function droidModel() {
   const paint = mat([0.9, 0.7, 0.15], { pattern: P.paint, rough: 0.4 });
   const steel = mat(C.steel, { pattern: P.paint, rough: 0.35 });
   const glow = mat([0.2, 0.2, 0.2], { emissive: [0.9, 0.6, 0.1] });
+  // Pièces de métal regroupées (couleurs par sommet) : moins d'objets à dessiner
+  const metal = mat([1, 1, 1], { pattern: P.paint, rough: 0.35 });
   const hips = new Node().at(0, 0.72, 0);
   const legs = [];
   for (const s of [-1, 1]) {
     const leg = new Node().at(s * 0.13, 0, 0);
-    leg.add(mesh(CY(0.07, 0.08, 0.64, 8, -0.66), steel));
-    leg.add(mesh(SP(0.09, 8, 6), steel).at(0, -0.33, 0));
-    leg.add(mesh(B(0.15, 0.08, 0.24, -0.72), mat(C.dark)).at(0, 0, 0.04));
+    leg.add(meshes(geo('dLeg', () => bake([
+      { g: CY(0.07, 0.08, 0.64, 8, -0.66), c: C.steel }, { g: SP(0.09, 8, 6), p: [0, -0.33, 0], c: C.steel },
+      { g: B(0.15, 0.08, 0.24, -0.72), p: [0, 0, 0.04], c: C.dark },
+    ])), metal));
     hips.add(leg); legs.push(leg);
   }
   const body = new Node();
@@ -682,9 +685,9 @@ export function droidModel() {
   const arms = [];
   for (const s of [-1, 1]) {
     const arm = new Node().at(s * 0.34, 0.5, 0);
-    arm.add(mesh(SP(0.08, 8, 6), steel));
-    arm.add(mesh(CY(0.045, 0.05, 0.5, 8, -0.52), steel));
-    arm.add(mesh(SP(0.065, 8, 6), mat(C.dark)).at(0, -0.56, 0));
+    arm.add(meshes(geo('dArm', () => bake([
+      { g: SP(0.08, 8, 6), c: C.steel }, { g: CY(0.045, 0.05, 0.5, 8, -0.52), c: C.steel }, { g: SP(0.065, 8, 6), p: [0, -0.56, 0], c: C.dark },
+    ])), metal));
     body.add(arm); arms.push(arm);
   }
   // Tasse de café (au coin pause)
@@ -695,16 +698,10 @@ export function droidModel() {
   mug.visible = false;
   arms[1].add(mug);
   const head = new Node().at(0, 0.78, 0);
-  const skull = mesh(SP(0.19, 12, 9), steel);
-  skull.scl = [1.15, 0.85, 1];
-  head.add(skull);
-  const visor = mesh(B(0.28, 0.08, 0.05), glow);
-  visor.pos = [0, 0.0, 0.17];
-  head.add(visor);
-  head.add(mesh(CY(0.012, 0.012, 0.25, 4), steel).at(0.08, 0.12, 0));
-  const tip = mesh(SP(0.035, 6, 4), glow);
-  tip.pos = [0.08, 0.38, 0];
-  head.add(tip);
+  head.add(meshes(geo('dSkull', () => bake([
+    { g: SP(0.19, 12, 9), s: [1.15, 0.85, 1], c: C.steel }, { g: CY(0.012, 0.012, 0.25, 4), p: [0.08, 0.12, 0], c: C.steel },
+  ])), metal));
+  head.add(meshes(geo('dVisor', () => bake([{ g: B(0.28, 0.08, 0.05), p: [0, 0, 0.17] }, { g: SP(0.035, 6, 4), p: [0.08, 0.38, 0] }])), glow));
   body.add(head);
   // Accessoires selon la spécialité
   const acc = {
@@ -743,6 +740,18 @@ export function droidModel() {
   for (const k of Object.keys(outfit)) { outfit[k].visible = false; body.add(outfit[k]); }
   hips.add(body);
   root.add(hips);
+  // Version simplifiée pour les droïdes éloignés : 2 morceaux au lieu d'une vingtaine
+  const far = new Node();
+  const farTorso = mesh(SP(0.3, 8, 6), paint);
+  farTorso.pos = [0, 1.04, 0]; farTorso.scl = [1, 1.12, 0.82];
+  far.add(farTorso, meshes(geo('droidFar', () => bake([
+    { g: CY(0.07, 0.08, 0.64, 6, -0.66), p: [-0.13, 0.72, 0] }, { g: CY(0.07, 0.08, 0.64, 6, -0.66), p: [0.13, 0.72, 0] },
+    { g: CY(0.045, 0.05, 0.5, 6, -0.52), p: [-0.34, 1.22, 0] }, { g: CY(0.045, 0.05, 0.5, 6, -0.52), p: [0.34, 1.22, 0] },
+    { g: SP(0.19, 8, 6), p: [0, 1.5, 0], s: [1.15, 0.85, 1] },
+  ])), steel));
+  far.visible = false;
+  root.add(far);
+  root.setFar = (on) => { if (root.far === on) return; root.far = on; far.visible = on; hips.visible = !on; };
   root.parts = { legs, arms, body, head, acc, paint, glow, hips, outfit, mug };
   root.setType = (type) => {
     const d = DROIDS[type];

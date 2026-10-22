@@ -1,10 +1,11 @@
-// Coéquipier piloté par l'ordinateur (mode solo) : il suit le joueur
-// et se place tout seul de l'autre côté dès qu'une tâche demande deux personnes.
+// Coéquipier piloté par l'ordinateur (mode solo) : il attend au coin pause, sur le canapé,
+// et vient se placer de l'autre côté dès qu'une tâche demande deux personnes (ou quand on l'appelle).
 import { POST_R, CORE, SPEED, PLOTS, WORLD } from './config.js';
-import { postL, postR } from './sim.js';
+import { postL, postR, pauseSpot, sofaEnd } from './sim.js';
 import { obstacles, steer } from './move.js';
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const CALL_FOLLOW = 60; // appelé, il suit le joueur pendant 1 minute
 
 export function createBot() {
   return { held: false, tap: 0, pressed: false, ent: { x: 0, z: 0, rot: 0 }, init: false, why: '' };
@@ -79,16 +80,35 @@ export function botInput(S, bot, dt, aIn) {
       const px = -uz, pz = ux, sgn = px * bx + pz * bz >= 0 ? 1 : -1;
       goal = clampG(a.x + px * sgn * 2.4 + ux * 0.9, a.z + pz * sgn * 2.4 + uz * 0.9);
     }
-  } else {
+  } else if (S.time - (bot.calledAt ?? -1e9) < CALL_FOLLOW) {
+    // Appelé : il rejoint le joueur et le suit un moment
+    why = 'appel';
     const back = 2.2, side = 1.3;
     goal = { x: A.x - Math.sin(A.rot) * back + Math.cos(A.rot) * side, z: A.z - Math.cos(A.rot) * back - Math.sin(A.rot) * side };
     if (dist(bot.ent, goal) < 1.2) goal = null;
-  }
+  } else why = 'pause';
   bot.why = why;
+
+  // Coin pause : il entre par le bout du canapé et glisse jusqu'à sa place (sans traverser les meubles), et ressort de même
+  const seat = pauseSpot(0), end = sofaEnd(seat, { x: -1e9, z: 0 });
+  let glideTo = null;
+  bot.seated = false;
+  if (why === 'pause') {
+    if (bot.inRow) glideTo = seat;
+    else if (dist(bot.ent, end) < 0.4) { bot.inRow = true; glideTo = seat; }
+    else goal = end;
+  } else if (bot.inRow && !me.locked) {
+    if (dist(bot.ent, end) < 0.05) bot.inRow = false;
+    else { glideTo = end; goal = null; }
+  }
 
   let mx = 0, mz = 0;
   if (mirror) { mx = mirror.mx; mz = mirror.mz; }
-  else if (goal && !me.locked) {
+  else if (glideTo) {
+    const dx = glideTo.x - bot.ent.x, dz = glideTo.z - bot.ent.z, l = Math.hypot(dx, dz), st = Math.min(l, 2.4 * dt);
+    if (l > 0.02) { bot.ent.x += (dx / l) * st; bot.ent.z += (dz / l) * st; mx = dx / l; mz = dz / l; bot.ent.rot = Math.atan2(mx, mz); }
+    else if (glideTo === seat) { bot.ent.x = seat.x; bot.ent.z = seat.z; bot.ent.rot = seat.rot; bot.seated = true; }
+  } else if (goal && !me.locked) {
     const x0 = bot.ent.x, z0 = bot.ent.z;
     const far = dist(bot.ent, goal);
     // Coincé ou trop loin : il « rejoint » directement (comme un coéquipier de jeu vidéo).
@@ -112,5 +132,6 @@ export function botInput(S, bot, dt, aIn) {
 }
 
 export function botLabel(bot) {
-  return { caisse: 'porte la caisse', montage: 'monte avec toi', panne: 'répare la panne avec toi', créature: 'prend la créature à revers', suit: 'te suit' }[bot.why] || '';
+  if (bot.why === 'pause') return bot.seated ? 'en pause café' : 'va au coin pause';
+  return { caisse: 'porte la caisse', montage: 'monte avec toi', panne: 'répare la panne avec toi', créature: 'prend la créature à revers', appel: 'te rejoint' }[bot.why] || '';
 }

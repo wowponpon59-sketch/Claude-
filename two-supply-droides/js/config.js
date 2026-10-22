@@ -1,7 +1,7 @@
-// Two Supply — Droïdes (version 0.4.2)
+// Two Supply — Droïdes (version 0.4.3)
 // Repère : x vers l'est, z vers le sud, y vers le haut. Unité : mètre.
 
-export const VERSION = '0.4.2';
+export const VERSION = '0.4.3';
 export const SAVE_KEY = 'twosupply-droides-save-v04';
 
 export const WORLD = { half: 40 };
@@ -13,7 +13,8 @@ export const CARRY_SPEED = 2.6;
 export const REACH = 1.1;      // joueur → bord d'un objet
 export const POST_R = 1.1;     // joueur → poste à deux
 export const SAC_MAX = 12;
-export const LABEL_RANGE = 8;  // les infos ne s'affichent qu'à moins de 8 m
+export const LABEL_RANGE = 3;  // noms des machines, bâtiments et débris : seulement à moins de 3 m de leur bord
+export const ANIMAL_RANGE = 8; // créatures : à moins de 8 m
 export const OUT_MAX = 4;      // sortie maximale d'une machine, par produit
 
 export const PLAYER_COLORS = {
@@ -116,13 +117,15 @@ export const T = {
   spec: 6,
   panneStart: 120,      // premières pannes dès 2 minutes de jeu
   wear: [70, 130],      // secondes de fonctionnement avant une panne
+  idleWear: 0.2,        // une machine à l'arrêt s'use 5 fois moins vite (mais elle s'use)
+  panneGrow: 0.04,      // +4 % de pannes à chaque niveau (×1,8 au niveau 20)
   heavyFrom: 4,         // niveau 5 (index 4) : pannes lourdes
   animalBoost: 0.25,
   animalMax: 2,
   bumpBack: 90,
   battery: 150,         // batterie de secours à l'arrivée du courant (secondes)
-  genCap: 5,            // le générateur contient 5 unités de charbon ou de bois
-  genUnit: 720,         // 1 unité brûlée toutes les 12 minutes de jeu
+  genCap: 5,            // le générateur contient 5 charbons et 5 bois
+  genUnit: 360,         // 1 unité brûlée toutes les 6 minutes de jeu (10 unités = 1 heure)
   overheatAt: 3600,     // surchauffe après 1 heure de jeu avec le générateur
   overheatLock: 1800,   // pause obligatoire de 30 minutes (temps réel)
   restReset: 1800,      // 30 minutes sans jouer : le compteur repart de zéro
@@ -169,7 +172,7 @@ export const RECIPES = {
   tole: { name: 'Tôles (×2)', in: { lingot: 1 }, out: { tole: 2 }, time: 5, lvl: 8 },
   ctrl: { name: 'Contrôler les pièces déclassées', in: {}, out: {}, any: 'decl', time: 3, lvl: 12 },
   recyc: { name: 'Recycler les rebuts', in: {}, out: {}, any: 'rebut', time: 4, lvl: 12 },
-  surplus: { name: 'Recycler les objets en trop', in: {}, out: {}, any: 'surplus', time: 4, lvl: 10 },
+  surplus: { name: 'Recycler les objets en trop', in: {}, out: {}, any: 'surplus', time: 4, lvl: 6 },
   verreF: { name: 'Verre fondu (×2)', in: { sable: 2, charbon: 1 }, out: { verre: 2 }, time: 6, lvl: 15 },
   silicium: { name: 'Plaque de silicium', in: { sable: 1, calcaire: 1, charbon: 1 }, out: { silicium: 1 }, time: 7, lvl: 15 },
   carton: { name: 'Cartons (×2)', in: { bois: 1, plastique: 1 }, out: { carton: 2 }, time: 4, lvl: 17 },
@@ -185,13 +188,13 @@ export const MACHINES = {
   etabli: { name: 'Établi des kits', w: 3.2, d: 2.2, noDecl: true, recipes: KIT_RECIPES, cost: { fer: 4, argile: 3, verre: 2, circuit: 1 }, desc: 'Kits de spécialisation des droïdes' },
   atelier: { name: 'Atelier de spécialisation', w: 3.4, d: 2.6, recipes: [], cost: { fer: 6, verre: 3, circuit: 2, carcasse: 2 }, desc: 'Droïde standard + kit → employé spécialisé' },
   ceramique: { name: 'Four à céramique', w: 3.0, d: 2.4, recipes: ['isolant'], cost: { argile: 6, calcaire: 3, fer: 2, eau: 2 }, desc: 'Argile → isolants céramiques' },
-  generateur: { name: 'Générateur', w: 2.8, d: 2.2, recipes: [], fuel: true, cost: { fer: 6, isolant: 4, caoutchouc: 2, argile: 3 }, desc: 'Brûle 1 charbon ou 1 bois toutes les 12 minutes' },
+  generateur: { name: 'Générateur', w: 2.8, d: 2.2, recipes: [], fuel: true, cost: { fer: 6, isolant: 4, caoutchouc: 2, argile: 3 }, desc: '5 charbons et 5 bois au maximum : 1 unité brûlée toutes les 6 minutes' },
   trefileuse: { name: 'Tréfileuse', w: 2.8, d: 2.0, recipes: ['fil'], cost: { fer: 4, cuivre: 3, caoutchouc: 2 }, desc: 'Cuivre → fil de cuivre' },
   fonderie: { name: 'Fonderie', w: 3.0, d: 2.4, recipes: ['lingot'], cost: { argile: 8, calcaire: 4, fer: 4, charbon: 2 }, desc: 'Fer + charbon → lingot' },
   laminoir: { name: 'Laminoir', w: 3.4, d: 2.0, recipes: ['tole'], cost: { fer: 6, lingot: 3, caoutchouc: 2, fil: 2 }, desc: 'Lingot → tôles' },
   qualite: { name: 'Poste de contrôle qualité', w: 3.0, d: 2.2, noDecl: true, recipes: ['ctrl'], cost: { tole: 4, verre: 3, circuit: 2, plastique: 2 }, desc: 'Déclassé → bonne pièce ou rebut' },
-  zone: { name: 'Zone des déclassés', w: 3.6, d: 2.2, recipes: [], store: true, cost: { bois: 4, fer: 2 }, desc: 'Stocke les pièces déclassées avant le contrôle' },
-  recycleur: { name: 'Recycleur', w: 2.8, d: 2.2, noDecl: true, recipes: ['surplus', 'recyc'], cost: { tole: 4, caoutchouc: 2, fil: 2 }, desc: 'Objets en trop et rebuts → matières premières' },
+  zone: { name: 'Zone des déclassés', w: 3.6, d: 2.2, recipes: [], store: true, cost: { bois: 4, fer: 2 }, desc: 'Stocke les pièces déclassées et les rebuts, à part des bonnes pièces' },
+  recycleur: { name: 'Recycleur', w: 2.8, d: 2.2, noDecl: true, recipes: ['surplus', 'recyc'], cost: { fer: 5, caoutchouc: 2, fil: 2 }, desc: 'Objets en trop et rebuts → matières premières' },
   four: { name: 'Four à verre', w: 3.0, d: 2.4, recipes: ['verreF', 'silicium'], cost: { argile: 6, calcaire: 4, tole: 2, sable: 4 }, desc: 'Sable fondu : verre et silicium' },
   emballeuse: { name: 'Emballeuse', w: 3.2, d: 2.2, recipes: ['carton', 'colis'], cost: { tole: 4, bois: 4, plastique: 3, caoutchouc: 2 }, desc: 'Cartons et colis' },
   quai: { name: 'Quai d’expédition', w: 4.0, d: 2.2, recipes: [], cost: { bois: 6, tole: 2, fer: 4 }, desc: 'Livrez les colis aux clients' },
@@ -211,7 +214,7 @@ export const PLOTS = [
   { id: 'fonderie', type: 'fonderie', x: -17, z: 7, level: 9 },
   { id: 'laminoir', type: 'laminoir', x: -8.5, z: 7, level: 9 },
   { id: 'qualite', type: 'qualite', x: 0, z: 7, level: 13 },
-  { id: 'recycleur', type: 'recycleur', x: 8.5, z: 7, level: 11 },
+  { id: 'recycleur', type: 'recycleur', x: 8.5, z: 7, level: 7 },
   { id: 'circuits2', type: 'circuits', x: 17, z: 7, level: 11 },
   { id: 'four', type: 'four', x: -17, z: 13, level: 16 },
   { id: 'zone', type: 'zone', x: 0, z: 13, level: 13 },
@@ -236,7 +239,7 @@ export const DROIDS = {
   chefmaint: { name: 'Chef de la maintenance', color: [0.12, 0.56, 0.31], css: '#1f8f4e', kit: 'k_valise', lvl: 8, work: 'hq', desc: 'Répare les pannes lourdes (et légères) tout seul.' },
   expert: { name: 'Agent logistique expert', color: [0.17, 0.31, 0.84], css: '#2b4fd6', kit: 'k_terminal', lvl: 9, work: 'hq', desc: 'Distribue les pièces fabriquées à la machine qui en aura besoin le plus tôt.' },
   qualite: { name: 'Responsable qualité', color: [0.95, 0.95, 0.95], css: '#f2f2f2', kit: 'k_lecteur', lvl: 12, work: 'machine', only: 'qualite', desc: 'Tient le poste de contrôle : 1 rebut sur 3 déclassées au lieu de 1 sur 2.' },
-  adjq: { name: 'Adjoint qualité', color: [0.89, 0.27, 0.25], css: '#e2463f', kit: 'k_chariot', lvl: 13, work: 'hq', desc: 'Amène les déclassées au contrôle, les rebuts au recycleur et les bonnes pièces à l’entrepôt.' },
+  adjq: { name: 'Adjoint qualité', color: [0.89, 0.27, 0.25], css: '#e2463f', kit: 'k_chariot', lvl: 13, work: 'hq', at: 'zone', desc: 'Se met au travail à la zone des déclassés : amène les déclassées au contrôle, les rebuts au recycleur et les bonnes pièces à l’entrepôt.' },
   production: { name: 'Agent de production', color: [1.0, 0.48, 0.10], css: '#ff7a1a', kit: 'k_bras', lvl: 15, work: 'machine', desc: 'Fait tourner deux machines à la fois.' },
   process: { name: 'Ingénieur process', color: [0.36, 0.29, 0.85], css: '#5b4bd8', kit: 'k_flux', lvl: 15, work: 'hq', desc: 'Optimise les flux : +15 % de cadence sur toute l’usine.' },
   achat: { name: 'Agent d’achat packaging', color: [1.0, 0.44, 0.69], css: '#ff6fb1', kit: 'k_achat', lvl: 17, work: 'hq', desc: 'Commande les cartons : contre 1 plastique, il en livre 3 à l’emballeuse.' },
@@ -318,7 +321,7 @@ export const LEVELS = [
     { id: 'heavy', text: 'Réparer une panne lourde (à deux)' },
   ] },
   { name: 'Sous tension', rodage: true, goals: [
-    { id: 'r6a', text: 'Produire 4 droïdes', c: ['made+', 4] },
+    { id: 'r6a', text: 'Former 2 droïdes spécialisés', c: ['spec+', 2] },
     { id: 'r6b', text: 'Avoir 4 droïdes au travail', c: ['work', 4] },
     { id: 'r6c', text: 'Gagner 35 crédits', c: ['earn+', 35] },
     { id: 'recherche', text: 'Former un agent de recherche (détecteur)' },
@@ -326,12 +329,14 @@ export const LEVELS = [
   { name: 'Les bâtisseurs', goals: [
     { id: 'trefileuse', text: 'Construire la tréfileuse' },
     { id: 'r7a', text: 'Produire 4 fils de cuivre', c: ['item+', 4, 'fil'] },
+    { id: 'recycleur', text: 'Construire le recycleur' },
     { id: 'ingenieur', text: 'Former un ingénieur (tablette de plans)' },
   ] },
   { name: 'Nouveaux circuits', rodage: true, goals: [
     { id: 'r8a', text: 'Produire 6 circuits', c: ['item+', 6, 'circuit'] },
     { id: 'r8b', text: 'Avoir 8 droïdes dans l’usine', c: ['droids', 8] },
     { id: 'r8c', text: 'Réparer 3 pannes', c: ['rep+', 3] },
+    { id: 'r8d', text: 'Recycler 2 objets en trop (bouton Recettes du recycleur)', c: ['surplus+', 2] },
   ] },
   { name: 'Métallurgie', goals: [
     { id: 'fonderie', text: 'Construire la fonderie' },
@@ -340,7 +345,7 @@ export const LEVELS = [
     { id: 'chefmaint', text: 'Former un chef de la maintenance (valise d’expert)' },
   ] },
   { name: 'La cadence', rodage: true, goals: [
-    { id: 'r10a', text: 'Produire 5 droïdes', c: ['made+', 5] },
+    { id: 'r10a', text: 'Former 2 droïdes spécialisés', c: ['spec+', 2] },
     { id: 'r10b', text: 'Avoir 6 droïdes au travail', c: ['work', 6] },
     { id: 'r10c', text: 'Gagner 45 crédits', c: ['earn+', 45] },
     { id: 'expert', text: 'Former un agent logistique expert (terminal logistique)' },
@@ -348,11 +353,10 @@ export const LEVELS = [
   { name: 'Deux lignes', goals: [
     { id: 'forge2', text: 'Construire une deuxième forge' },
     { id: 'circuits2', text: 'Construire un deuxième atelier de circuits' },
-    { id: 'recycleur', text: 'Construire le recycleur' },
-    { id: 'r11a', text: 'Recycler 2 objets en trop (bouton Recettes du recycleur)', c: ['surplus+', 2] },
+    { id: 'r11a', text: 'Produire 6 carcasses', c: ['item+', 6, 'carcasse'] },
   ] },
   { name: 'La grande série', rodage: true, goals: [
-    { id: 'r12a', text: 'Produire 6 droïdes', c: ['made+', 6] },
+    { id: 'r12a', text: 'Former 2 droïdes spécialisés', c: ['spec+', 2] },
     { id: 'r12b', text: 'Avoir 3 créatures installées', c: ['crea', 3] },
     { id: 'r12c', text: 'Réparer 4 pannes', c: ['rep+', 4] },
   ] },
@@ -379,7 +383,7 @@ export const LEVELS = [
     { id: 'process', text: 'Former un ingénieur process' },
   ] },
   { name: 'Haute technologie', rodage: true, goals: [
-    { id: 'r17a', text: 'Produire 6 droïdes', c: ['made+', 6] },
+    { id: 'r17a', text: 'Former 2 droïdes spécialisés', c: ['spec+', 2] },
     { id: 'r17b', text: 'Avoir 4 créatures installées', c: ['crea', 4] },
     { id: 'r17c', text: 'Réparer 5 pannes', c: ['rep+', 5] },
   ] },

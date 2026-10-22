@@ -1,10 +1,22 @@
-# Two Supply — Droïdes (version 0.4.2)
+# Two Supply — Droïdes (version 0.4.3)
 
 Usine de droïdes dans un terrain vague, en 20 niveaux, en solo (avec un coéquipier IA) ou à deux téléphones.
 
 **Jouer :** `https://wowponpon59-sketch.github.io/Claude-/two-supply-droides/`
 
 Les versions 0.2 et 0.3 restent dans l’historique Git. La version 0.1 (pain) est dans `two-supply/`.
+
+## Nouveautés de la 0.4.3
+
+- **Pannes** : une machine à l’arrêt s’use aussi (5 fois moins vite qu’en marche), donc les pannes arrivent même quand le stock est plein. Il y en a un peu plus à chaque niveau (+4 % par niveau). Le niveau 8 (« Réparer 3 pannes ») est de nouveau faisable à deux.
+- **Générateur** : 5 charbons **et** 5 bois au maximum, 1 unité brûlée toutes les 6 minutes (10 unités = 1 heure). La surchauffe n’est plus annoncée à l’avance : on la découvre quand elle arrive.
+- **Noms des machines et bâtiments** visibles seulement tout près (à moins de 3 m de leur bord). Les bulles « à récupérer », les joueurs et l’objectif restent visibles de loin.
+- **Zone des déclassés** : déclassés **et rebuts** sont toujours rangés à part, jamais à l’entrepôt des bonnes pièces, même avant l’adjoint qualité. L’adjoint qualité se met au travail à la zone des déclassés.
+- **Coéquipier IA** : il attend assis sur le canapé du coin pause avec un café ; il vient pour les tâches à deux (montage, panne lourde, caisse, créature) ou quand on appuie sur le bouton d’appel (il te suit alors 1 minute).
+- **Recycleur au niveau 7** (fer, caoutchouc, fil de cuivre) ; le niveau 11 demande 6 carcasses à la place.
+- **« Former 2 droïdes spécialisés »** remplace « Produire 4, 5 ou 6 droïdes » aux niveaux 6, 10, 12 et 17.
+- **Droïdes moins coincés** : ils contournent par les coins le coin pause, l’entrepôt et les machines qui barrent leur chemin.
+- **Plus fluide en fin de partie** : ce qui est hors de l’écran n’est plus dessiné, les droïdes éloignés sont simplifiés et chaque droïde compte deux fois moins de morceaux (environ deux fois moins d’objets dessinés au niveau 20).
 
 ## Nouveautés de la 0.4.2
 
@@ -68,4 +80,4 @@ Deux onglets sur le même ordinateur : ajouter `?net=fake` à l’adresse.
 
 ## Tests
 
-Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, navigateur, créatures, recyclage). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.
+Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.

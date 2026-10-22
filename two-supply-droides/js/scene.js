@@ -7,9 +7,10 @@ import {
   buildGround, buildDecor, nodeModel, machineModel, plotModel, entrepotModel, coreModel,
   workerModel, droidModel, animalModel, itemPile, pauseModel,
 } from './models.js';
-import { postL, postR, plotUnlocked } from './sim.js';
+import { postL, postR, plotUnlocked, pauseSpot } from './sim.js';
 
 const YELLOW = [0.96, 0.75, 0.06];
+const FAR_DROID = 14;
 
 function duoRing() {
   const n = mesh(ring(0.45, 0.6, 40), mat(YELLOW, { opacity: 0.9, unlit: 1, cast: false }));
@@ -29,6 +30,7 @@ export function buildScene(mode = 'duo') {
 
   NODES.forEach((n, i) => {
     const m = nodeModel(n);
+    m.cullR = NODE_TYPES[n.type].r + 1.8;
     root.add(m);
     S.nodes[i] = m;
     S.targets['node' + i] = m;
@@ -36,10 +38,12 @@ export function buildScene(mode = 'duo') {
 
   const ent = entrepotModel();
   ent.pos = [ENTREPOT.x, 0, ENTREPOT.z];
+  ent.cullR = 4.5;
   root.add(ent);
   S.targets.entrepot = ent;
   S.pause = pauseModel();
   S.pause.pos = [PAUSE.x, 0, PAUSE.z];
+  S.pause.cullR = 3.5;
   root.add(S.pause);
 
   for (const p of PLOTS) {
@@ -48,6 +52,7 @@ export function buildScene(mode = 'duo') {
     const mm = machineModel(p.type);
     mm.pos = [p.x, 0, p.z];
     mm.visible = false;
+    pm.cullR = mm.cullR = Math.hypot(MACHINES[p.type].w / 2, MACHINES[p.type].d / 2, 4);
     root.add(pm, mm);
     S.plots[p.id] = pm;
     S.machines[p.id] = mm;
@@ -55,6 +60,7 @@ export function buildScene(mode = 'duo') {
       const r = duoRing();
       const pt = side === 'L' ? postL(p) : postR(p);
       r.pos = [pt.x, 0.03, pt.z];
+      r.cullR = 0.8;
       root.add(r);
       S.rings[p.id + side] = r;
     }
@@ -62,6 +68,7 @@ export function buildScene(mode = 'duo') {
 
   S.core = coreModel();
   S.core.pos = [CORE.x, height(CORE.x, CORE.z), CORE.z];
+  S.core.cullR = 2.5;
   root.add(S.core);
   for (const side of ['L', 'R']) {
     const r = duoRing();
@@ -78,6 +85,7 @@ export function buildScene(mode = 'duo') {
     B.parts.acc.ouvrier.visible = false;
   } else B = workerModel('B');
   S.players = { A: workerModel('A'), B };
+  S.players.A.cullR = B.cullR = 1.6;
   root.add(S.players.A, S.players.B);
   return S;
 }
@@ -102,6 +110,20 @@ function walk(model, speed, time, dt) {
   } else {
     P.legs.forEach((l, i) => { l.rot[0] = Math.sin(model.phase + i * 1.7) * 0.35 * Math.min(1, speed / 2); });
   }
+}
+
+// Pause café : assis (ou debout), une tasse qu'on porte de temps en temps à la bouche
+function cafePose(P, time, seed, sit) {
+  if (sit) {
+    P.hips.pos[1] = (P.hips.base ?? 0.72) - 0.26;
+    P.legs[0].rot[0] = -1.15; P.legs[1].rot[0] = -1.15;
+  }
+  const ph = (time * 0.8 + seed * 1.37) % 6;
+  const sip = ph < 1.2 ? Math.sin((ph / 1.2) * Math.PI) : 0;
+  P.arms[1].rot[0] = -0.95 - sip * 1.15;
+  P.arms[0].rot[0] = sit ? -0.3 : 0.05;
+  P.head.rot[0] = sip * -0.25;
+  P.mug.rot[0] = -P.arms[1].rot[0];
 }
 
 function place(model, x, z, rot, k, init) {
@@ -140,6 +162,14 @@ export function updateScene(S, st, view) {
       g.parts.arms[0].rot[0] = a; g.parts.arms[1].rot[0] = -0.9 - Math.sin(view.time * 14) * 0.35;
     } else {
       for (const [pid, pst] of Object.entries(st.plots)) if (pst.holder === id) { g.parts.arms[0].rot[0] = -1.4; g.parts.arms[1].rot[0] = -1.4; }
+    }
+    // Solo : le coéquipier IA assis sur le canapé du coin pause, un café à la main
+    if (g.parts.mug) {
+      const seat = pauseSpot(0);
+      const sit = st.mode === 'solo' && id === 'B' && Math.hypot(p.x - seat.x, p.z - seat.z) < 0.05;
+      g.parts.mug.visible = sit;
+      if (sit) cafePose(g.parts, view.time, 0, true);
+      else g.parts.head.rot[0] = 0;
     }
   }
 
@@ -267,13 +297,16 @@ export function updateScene(S, st, view) {
   for (const d of st.droids) {
     seen.add(d.id);
     let m = S.droids.get(d.id);
-    if (!m) { m = droidModel(); S.root.add(m); S.droids.set(d.id, m); S.targets['droid' + d.id] = m; }
+    if (!m) { m = droidModel(); m.cullR = 1.6; S.root.add(m); S.droids.set(d.id, m); S.targets['droid' + d.id] = m; }
     if (m.type !== d.type) { m.setType(d.type); m.type = d.type; m.outfitK = undefined; }
     const wear = (st.wardrobe && st.wardrobe.wear[d.type]) || null;
     const ofit = d.type + JSON.stringify(wear);
     if (m.outfitK !== ofit) { m.setOutfit(d.type, wear); m.outfitK = ofit; }
     m.visible = d.st !== 'spec';
     place(m, d.x, d.z, d.rot, k);
+    // Loin du joueur : modèle simplifié, sans animation
+    m.setFar(Math.hypot(d.x - view.me.x, d.z - view.me.z) > FAR_DROID);
+    if (m.far) continue;
     const v = speedOf(m, view.dt);
     walk(m, v, view.time, view.dt);
     const busy = (d.st === 'work' && st.machines[d.job] && st.machines[d.job].run) || d.repairing;
@@ -285,18 +318,8 @@ export function updateScene(S, st, view) {
     // Coin pause : assis sur le canapé ou debout, une tasse de café qu'il porte de temps en temps à la bouche
     const P = m.parts;
     P.mug.visible = !!d.pose;
-    if (d.pose === 'sit') {
-      P.hips.pos[1] = (P.hips.base ?? 0.72) - 0.26;
-      P.legs[0].rot[0] = -1.15; P.legs[1].rot[0] = -1.15;
-    }
-    if (d.pose) {
-      const ph = (view.time * 0.8 + d.id * 1.37) % 6;
-      const sip = ph < 1.2 ? Math.sin((ph / 1.2) * Math.PI) : 0;
-      P.arms[1].rot[0] = -0.95 - sip * 1.15;
-      P.arms[0].rot[0] = d.pose === 'sit' ? -0.3 : 0.05;
-      P.head.rot[0] = sip * -0.25;
-    } else P.head.rot[0] = 0;
-    P.mug.rot[0] = -P.arms[1].rot[0];
+    if (d.pose) cafePose(P, view.time, d.id, d.pose === 'sit');
+    else P.head.rot[0] = 0;
   }
   // Vapeur de la machine à café
   S.pause.anim.steam.children.forEach((s, i) => {
@@ -312,7 +335,7 @@ export function updateScene(S, st, view) {
   for (const a of st.animals) {
     seenA.add(a.id);
     let m = S.animals.get(a.id);
-    if (!m) { m = animalModel(a.sp); S.root.add(m); S.animals.set(a.id, m); S.targets['animal' + a.id] = m; }
+    if (!m) { m = animalModel(a.sp); m.cullR = 2.6; S.root.add(m); S.animals.set(a.id, m); S.targets['animal' + a.id] = m; }
     let x = a.x, z = a.z, rot = a.rot;
     if (a.st === 'installed' && a.mach) {
       const p = PLOTS.find((q) => q.id === a.mach), mw = MACHINES[p.type].w;

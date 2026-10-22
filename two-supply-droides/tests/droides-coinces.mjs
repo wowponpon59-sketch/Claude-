@@ -16,7 +16,8 @@ for (let i = 0; i < 30 * 360; i++) {
   sitMax = Math.max(sitMax, S.droids.filter((d) => d.pose === 'sit').length);
   cafeMax = Math.max(cafeMax, S.droids.filter((d) => d.pose === 'cafe').length);
   for (const d of S.droids) {
-    if (!(d.st === 'work' && d.job === 'hq') || d.pose) { stuckT.set(d.id, 0); continue; }
+    // en pause café ou en train de réparer/fouiller sur place : pas coincé
+    if (!(d.st === 'work' && d.job === 'hq') || d.pose || d.repairing) { stuckT.set(d.id, 0); continue; }
     const p = last.get(d.id) || { x: d.x, z: d.z };
     const mv = Math.hypot(d.x - p.x, d.z - p.z);
     last.set(d.id, { x: d.x, z: d.z });

@@ -432,6 +432,8 @@ $('btn-call').addEventListener('click', () => {
   if (!app.playing || performance.now() - lastCall < 1500) return;
   lastCall = performance.now();
   play('tap');
+  // Solo : le coéquipier IA quitte le coin pause et vient te rejoindre
+  if (app.mode === 'solo' && app.bot && app.sim) { app.bot.calledAt = app.sim.time; UI.toast('Le coéquipier IA arrive.', 'info'); return; }
   UI.toast('Signal envoyé à ton partenaire.', 'info');
   if (app.isHost) app.pendingFx.push({ to: 'B', k: 'call', text: 'Ton partenaire t’appelle !', x: app.me.x, z: app.me.z, meet: true });
   else if (app.link) app.link.send({ t: 'ping' });

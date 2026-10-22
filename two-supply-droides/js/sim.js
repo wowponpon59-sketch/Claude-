@@ -25,7 +25,7 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
     droids: [], animals: [],
     work: { A: null, B: null },
     seq: 1, made: 0, animalT: 0,
-    stats: { made: {}, controlled: 0, recycled: 0, surplus: 0, orders: 0, heavyFixed: 0, burned: 0, repairs: 0, earned: 0 },
+    stats: { made: {}, controlled: 0, recycled: 0, surplus: 0, orders: 0, heavyFixed: 0, burned: 0, repairs: 0, earned: 0, spec: 0 },
     lv0: null,
     power: { battery: 0, energy: 0, out: false, warned: false },
     gen: { play: 0, lockUntil: 0 },
@@ -43,7 +43,7 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
 
 // Compteurs au début du niveau : les objectifs de rodage comptent ce qui se passe pendant le niveau
 function snapshot(S) {
-  return { made: S.made, earned: S.stats.earned, repairs: S.stats.repairs, ctrl: S.stats.controlled, recyc: S.stats.recycled, surplus: S.stats.surplus || 0, orders: S.stats.orders, items: { ...S.stats.made } };
+  return { made: S.made, earned: S.stats.earned, repairs: S.stats.repairs, ctrl: S.stats.controlled, recyc: S.stats.recycled, surplus: S.stats.surplus || 0, orders: S.stats.orders, spec: S.stats.spec || 0, items: { ...S.stats.made } };
 }
 const nowMs = (S) => S.clock || Date.now();
 
@@ -72,6 +72,11 @@ export function restoreState(S) {
   S.stats.surplus = S.stats.surplus || 0;
   if (!S.lv0) S.lv0 = snapshot(S);
   if (S.lv0.surplus === undefined) S.lv0.surplus = S.stats.surplus;
+  S.stats.spec = S.stats.spec || 0;
+  if (S.lv0.spec === undefined) S.lv0.spec = S.stats.spec;
+  // 0.4.3 : déclassés et rebuts restent à part, dans la zone des déclassés
+  const z = S.machines.zone;
+  if (z) for (const [k, n] of Object.entries(S.stock)) if (n > 0 && apart(k)) { z.inp[k] = (z.inp[k] || 0) + n; delete S.stock[k]; }
   return S;
 }
 
@@ -110,8 +115,13 @@ export const hasType = (S, type) => Object.values(S.machines).some((m) => m.type
 export const qcActive = (S) => hasType(S, 'qualite') && hasType(S, 'zone');
 export const needPower = (S) => S.level >= 4;
 export const genUnits = (m) => (m.inp.charbon || 0) + (m.inp.bois || 0);
-// Unités dans le générateur, en comptant celle qui brûle : 5 au maximum (1 heure)
-export const genFill = (S, m) => genUnits(m) + (S.power.energy > 0 ? 1 : 0);
+export const FUELS = ['charbon', 'bois'];
+// Unités d'un combustible dans le générateur, en comptant celle qui brûle : 5 charbons et 5 bois au maximum
+export const genFill = (S, m, k) => (m.inp[k] || 0) + (S.power.energy > 0 && (S.power.fuel || 'charbon') === k ? 1 : 0);
+export const genFree = (S, m, k) => Math.max(0, T.genCap - genFill(S, m, k));
+export const genText = (S, m) => FUELS.map((k) => `${lc(k)} ${genFill(S, m, k)}/${T.genCap}`).join(' · ');
+// Déclassés et rebuts : jamais avec les bonnes pièces, toujours dans la zone des déclassés
+export const apart = (k) => isDecl(k) || isRebut(k);
 export function powerIssue(S) {
   if (!needPower(S)) return null;
   const gen = S.machines.generateur;
@@ -178,8 +188,7 @@ function goalWants(S, k) {
 export function needOf(S, m) {
   const out = {};
   if (MACHINES[m.type].fuel) {
-    const free = Math.max(0, T.genCap - genFill(S, m));
-    out.charbon = free; out.bois = free;
+    for (const k of FUELS) out[k] = genFree(S, m, k);
     return out;
   }
   if (MACHINES[m.type].store) return out;
@@ -257,7 +266,8 @@ export function targets(S, id) {
 
   if (!S.core.placed && S.core.hand[id]) return [{ key: 'core' + S.core.hand[id], d: 0, kind: 'duo', act: 'ungrab', label: 'Lâcher la caisse' }];
   const fol = followers(S, id);
-  const folHQ = fol.find((d) => DROIDS[d.type].work === 'hq');
+  const folHQ = fol.find((d) => DROIDS[d.type].work === 'hq' && !DROIDS[d.type].at);
+  const folZone = fol.find((d) => DROIDS[d.type].at === 'zone');
   const myAnimal = S.animals.find((a) => a.st === 'caught' && a.by === id);
 
   NODES.forEach((n, i) => {
@@ -314,7 +324,8 @@ export function targets(S, id) {
     if (myAnimal && isProd(m) && m.animals.length < T.animalMax) { add(pl.id, d, { act: 'install', label: `Installer ${ANIMALS[myAnimal.sp].name} (+25 %)` }); continue; }
     if (def.store) {
       const nd = declCount(p);
-      if (nd > 0) add(pl.id, d, { act: 'zoneput', label: `Déposer les déclassés (${nd})` });
+      if (folZone) add(pl.id, d, { act: 'assignHQ', label: `Mettre au travail : ${DROIDS[folZone.type].name.toLowerCase()}` });
+      else if (nd > 0) add(pl.id, d, { act: 'zoneput', label: `Déposer à la zone des déclassés (${nd})` });
       else add(pl.id, d, { act: 'menu', menu: 'zone', label: 'Ouvrir la zone des déclassés' });
       continue;
     }
@@ -333,9 +344,8 @@ export function targets(S, id) {
       continue;
     }
     if (def.fuel) {
-      const free = T.genCap - genFill(S, m);
-      if (free > 0 && ['charbon', 'bois'].some((k) => (p.sac[k] || 0) > 0)) add(pl.id, d, { act: 'load', label: `Charger le générateur (${genFill(S, m)}/${T.genCap})` });
-      else add(pl.id, d, { off: true, label: `Générateur : ${genFill(S, m)}/${T.genCap} unités${free > 0 ? ' · apporte du charbon ou du bois' : ''}` });
+      if (FUELS.some((k) => genFree(S, m, k) > 0 && (p.sac[k] || 0) > 0)) add(pl.id, d, { act: 'load', label: `Charger le générateur (${genText(S, m)})` });
+      else add(pl.id, d, { off: true, label: `Générateur : ${genText(S, m)}${FUELS.some((k) => genFree(S, m, k) > 0) ? ' · apporte du charbon ou du bois' : ''}` });
       continue;
     }
     if (S.work[id] && S.work[id].kind === 'operate' && S.work[id].key === pl.id) {
@@ -403,7 +413,7 @@ export function waitWhy(S, m) {
   const miss = missingIn(S, m);
   return sum(miss) ? 'il manque ' + fmt(miss) : 'sortie pleine : récupère la production';
 }
-const declCount = (p) => Object.entries(p.sac).reduce((a, [k, n]) => a + (isDecl(k) ? n : 0), 0);
+const declCount = (p) => Object.entries(p.sac).reduce((a, [k, n]) => a + (apart(k) ? n : 0), 0);
 const depositable = (p) => sacCount(p) - declCount(p);
 // Crédits gagnés (avec un « +n » au-dessus de l'endroit)
 function earn(S, n, at) {
@@ -429,15 +439,15 @@ function press(S, id) {
     case 'menu': fx(S, id, 'menu', { menu: t.menu }); break;
     case 'deposit': {
       const n = depositable(p);
-      for (const [k, v] of Object.entries(p.sac)) if (v > 0 && !isDecl(k)) { addStock(S, k, v); delete p.sac[k]; }
+      for (const [k, v] of Object.entries(p.sac)) if (v > 0 && !apart(k)) { addStock(S, k, v); delete p.sac[k]; }
       sfx(S, id, 'drop');
       toast(S, id, `${n} déposé${n > 1 ? 's' : ''} à l’entrepôt`, 'good');
-      if (declCount(p)) toast(S, id, 'Les pièces déclassées vont à la zone des déclassés.', 'warn');
+      if (declCount(p)) toast(S, id, 'Les déclassés et les rebuts vont à la zone des déclassés.', 'warn');
       break;
     }
     case 'zoneput': {
       const z = S.machines[t.key];
-      for (const [k, v] of Object.entries(p.sac)) if (isDecl(k)) { z.inp[k] = (z.inp[k] || 0) + v; delete p.sac[k]; }
+      for (const [k, v] of Object.entries(p.sac)) if (apart(k)) { z.inp[k] = (z.inp[k] || 0) + v; delete p.sac[k]; }
       sfx(S, id, 'drop');
       break;
     }
@@ -484,8 +494,8 @@ function press(S, id) {
     case 'load': {
       const m = S.machines[t.key];
       if (MACHINES[m.type].fuel) {
-        for (const k of ['charbon', 'bois']) {
-          const q = Math.min(T.genCap - genFill(S, m), p.sac[k] || 0);
+        for (const k of FUELS) {
+          const q = Math.min(genFree(S, m, k), p.sac[k] || 0);
           if (q > 0) { addSac(p, k, -q); m.inp[k] = (m.inp[k] || 0) + q; }
         }
         sfx(S, id, 'drop');
@@ -506,7 +516,7 @@ function press(S, id) {
       break;
     }
     case 'assignHQ': {
-      const dr = followers(S, id).find((d) => DROIDS[d.type].work === 'hq');
+      const dr = followers(S, id).find((d) => DROIDS[d.type].work === 'hq' && (t.key === 'entrepot' ? !DROIDS[d.type].at : DROIDS[d.type].at === t.key));
       dr.st = 'work'; dr.job = 'hq'; dr.who = null; dr.task = null;
       sfx(S, id, 'ok');
       toast(S, 'all', `${DROIDS[dr.type].name} au travail !`, 'good');
@@ -610,7 +620,7 @@ function build(S, plotId) {
   sfx(S, 'all', 'won');
   toast(S, 'all', `${MACHINES[pl.type].name} construite !`, 'good');
   if ((pl.type === 'qualite' || pl.type === 'zone') && qcActive(S)) toast(S, 'all', 'Contrôle qualité en place : 1 pièce sur 5 sortira déclassée. Rangez-les dans la zone des déclassés, puis contrôlez-les.', 'warn');
-  if (pl.type === 'generateur') { S.gen.play = 0; toast(S, 'all', 'Générateur : 1 charbon ou 1 bois toutes les 12 minutes. Attention, il surchauffe après 1 heure de jeu.', 'info'); }
+  if (pl.type === 'generateur') { S.gen.play = 0; toast(S, 'all', 'Générateur : jusqu’à 5 charbons et 5 bois, 1 unité brûlée toutes les 6 minutes.', 'info'); }
   if (pl.type === 'quai') S.orderT = 10;
 }
 export function forceBuild(S, plotId) { const st = S.plots[plotId]; st.del = { ...MACHINES[PLOT_BY_ID[plotId].type].cost }; st.ready = true; build(S, plotId); }
@@ -630,17 +640,17 @@ function command(S, id, e) {
     }
     case 'put': {
       if (!nearHQ || !ITEMS[e.item]) return;
-      if (isDecl(e.item)) { toast(S, id, 'Les pièces déclassées vont à la zone des déclassés.', 'warn'); return; }
+      if (apart(e.item)) { toast(S, id, 'Les déclassés et les rebuts vont à la zone des déclassés.', 'warn'); return; }
       const q = Math.max(0, Math.min(e.n | 0, p.sac[e.item] || 0));
       if (q) { addSac(p, e.item, -q); addStock(S, e.item, q); sfx(S, id, 'drop'); }
       break;
     }
-    case 'putall': if (nearHQ) { for (const [k, v] of Object.entries(p.sac)) if (!isDecl(k)) { addStock(S, k, v); delete p.sac[k]; } sfx(S, id, 'drop'); } break;
+    case 'putall': if (nearHQ) { for (const [k, v] of Object.entries(p.sac)) if (!apart(k)) { addStock(S, k, v); delete p.sac[k]; } sfx(S, id, 'drop'); } break;
     case 'ztake': case 'zput': case 'zputall': {
       const z = S.machines.zone;
       if (!z || boxDist(p, plotBox(PLOT_BY_ID.zone)) > REACH + 1.5) return;
-      if (e.c === 'zputall') { for (const [k, v] of Object.entries(p.sac)) if (isDecl(k)) { z.inp[k] = (z.inp[k] || 0) + v; delete p.sac[k]; } sfx(S, id, 'drop'); return; }
-      if (!isDecl(e.item)) return;
+      if (e.c === 'zputall') { for (const [k, v] of Object.entries(p.sac)) if (apart(k)) { z.inp[k] = (z.inp[k] || 0) + v; delete p.sac[k]; } sfx(S, id, 'drop'); return; }
+      if (!ITEMS[e.item] || !apart(e.item)) return;
       if (e.c === 'ztake') {
         const q = Math.max(0, Math.min(e.n | 0, z.inp[e.item] || 0, SAC_MAX - sacCount(p)));
         if (q) { z.inp[e.item] -= q; if (!z.inp[e.item]) delete z.inp[e.item]; addSac(p, e.item, q); sfx(S, id, 'pick'); }
@@ -892,7 +902,7 @@ function recipesCheck(S) {
   }
 }
 
-// Générateur : 1 unité toutes les 12 minutes de jeu, surchauffe après 1 heure (pause obligatoire de 30 minutes)
+// Générateur : 1 unité toutes les 6 minutes de jeu, surchauffe après 1 heure (pause obligatoire de 30 minutes)
 function generator(S, dt) {
   const gen = S.machines.generateur;
   if (!gen) return;
@@ -901,7 +911,7 @@ function generator(S, dt) {
   if (P.energy <= 0 && genUnits(gen) > 0) {
     const f = (gen.inp.charbon || 0) > 0 ? 'charbon' : 'bois';
     gen.inp[f] -= 1; if (!gen.inp[f]) delete gen.inp[f];
-    P.energy += T.genUnit; S.stats.burned += 1;
+    P.energy += T.genUnit; P.fuel = f; S.stats.burned += 1;
   }
   if (P.energy > 0 && !gen.broken) { P.energy = Math.max(0, P.energy - dt); gen.run = true; }
   S.gen.play += dt;
@@ -947,7 +957,7 @@ function machines(S, dt) {
     m.run = true;
     m.t += dt * cadence(m, S);
     if (S.time >= T.panneStart) {
-      m.wear -= dt;
+      m.wear -= dt * panneRate(S);
       if (m.wear <= 0) { breakdown(S, m); continue; }
     }
     if (m.t < r.time) continue;
@@ -969,7 +979,17 @@ function machines(S, dt) {
     // Plusieurs recettes cochées : 1 de chaque, à tour de rôle
     if (m.sel.length > 1) { m.cur = m.sel[(m.sel.indexOf(m.cur) + 1) % m.sel.length]; m.done = 0; }
   }
+  // Les machines à l'arrêt s'usent aussi (moins vite) : les pannes arrivent même quand le stock est plein
+  if (S.time >= T.panneStart) {
+    for (const m of Object.values(S.machines)) {
+      if (!isProd(m) || m.broken || m.run) continue;
+      m.wear -= dt * T.idleWear * panneRate(S);
+      if (m.wear <= 0) breakdown(S, m);
+    }
+  }
 }
+// Plus de pannes à chaque niveau
+const panneRate = (S) => 1 + T.panneGrow * S.level;
 
 // Contrôle d'une pièce déclassée, ou recyclage d'un rebut
 function produceAny(S, m, r) {
@@ -1052,16 +1072,17 @@ function droids(S, dt) {
       const m = S.machines[d.job];
       if (!m) { d.st = 'idle'; continue; }
       const f = front(PLOT_BY_ID[d.job]);
-      if (Math.hypot(f.x - d.x, f.z - d.z) > 0.3) { steer(d, f.x, f.z, 3.4, dt, obs, 0.35); d.moving = true; d.st = 'go'; }
+      if (!goTo(d, f, dt, obs, 3.4)) d.st = 'go';
       else { d.st = 'work'; d.rot = Math.PI; }
     } else if (d.st === 'spec') {
       d.t -= dt;
       if (d.t <= 0) {
         d.type = d.spec; d.spec = null;
         d.st = 'follow';
+        S.stats.spec = (S.stats.spec || 0) + 1;
         if (S.machines.atelier) S.machines.atelier.busy = null;
         sfx(S, 'all', 'won');
-        const w = DROIDS[d.type].work === 'hq' ? 'Mets-le au travail à l’entrepôt.' : 'Affecte-le à une machine.';
+        const w = DROIDS[d.type].at === 'zone' ? 'Mets-le au travail à la zone des déclassés.' : DROIDS[d.type].work === 'hq' ? 'Mets-le au travail à l’entrepôt.' : 'Affecte-le à une machine.';
         toast(S, 'all', `Nouveau : ${DROIDS[d.type].name.toLowerCase()} ! ${w}`, 'good');
       }
     } else if (d.st === 'work' && d.job === 'hq') {
@@ -1073,18 +1094,49 @@ function droids(S, dt) {
 }
 
 const onSlab = (p) => slabDist(p.x, p.z) < 0.5;
-// Segment qui coupe la dalle (élargie de e) ?
-function segHitsSlab(p, q, e) {
+// Segment p → q qui coupe le rectangle (élargi de e) : renvoie la fraction du trajet où il y entre, sinon -1
+function segRect(p, q, x0, x1, z0, z1, e) {
   let t0 = 0, t1 = 1;
   const dx = q.x - p.x, dz = q.z - p.z;
-  for (const [pp, dd, lo, hi] of [[p.x, dx, SLAB.x0 - e, SLAB.x1 + e], [p.z, dz, SLAB.z0 - e, SLAB.z1 + e]]) {
-    if (Math.abs(dd) < 1e-9) { if (pp < lo || pp > hi) return false; continue; }
+  for (const [pp, dd, lo, hi] of [[p.x, dx, x0 - e, x1 + e], [p.z, dz, z0 - e, z1 + e]]) {
+    if (Math.abs(dd) < 1e-9) { if (pp < lo || pp > hi) return -1; continue; }
     let a = (lo - pp) / dd, b = (hi - pp) / dd;
     if (a > b) [a, b] = [b, a];
     t0 = Math.max(t0, a); t1 = Math.min(t1, b);
-    if (t0 > t1) return false;
+    if (t0 > t1) return -1;
   }
-  return true;
+  return t0;
+}
+// Segment qui coupe la dalle (élargie de e) ?
+const segHitsSlab = (p, q, e) => segRect(p, q, SLAB.x0, SLAB.x1, SLAB.z0, SLAB.z1, e) >= 0;
+const segBox = (p, q, b, e) => segRect(p, q, b.x - b.w / 2, b.x + b.w / 2, b.z - b.d / 2, b.z + b.d / 2, e);
+const inBox = (p, b, e) => (b.c ? Math.hypot(p.x - b.x, p.z - b.z) < b.r + e : Math.abs(p.x - b.x) < b.w / 2 + e && Math.abs(p.z - b.z) < b.d / 2 + e);
+// Une machine ou un meuble (coin pause, entrepôt…) barre le chemin : on le contourne par le coin le plus court.
+// Le droïde garde le coin choisi jusqu'à l'atteindre, puis ne revient pas sur un coin déjà passé.
+function detour(d, pt, obs) {
+  let box = null, bt = 2;
+  for (const b of obs) {
+    if (b.c || b.core || Math.max(b.w, b.d) > 5 || inBox(pt, b, 0.36) || inBox(d, b, 0.36)) continue;
+    const t = segBox(d, pt, b, 0.36);
+    if (t >= 0 && t < bt) { bt = t; box = b; }
+  }
+  if (!box) { d.via = null; d.past = null; return null; }
+  // Nouvelle destination : on oublie l'ancien contournement
+  if (d.viaTo && dist(d.viaTo, pt) > 0.5) { d.via = null; d.past = null; }
+  d.viaTo = { x: pt.x, z: pt.z };
+  if (d.via) {
+    if (dist(d, d.via) > 0.35) return d.via;
+    d.past = d.via; d.via = null;
+  }
+  let best = null, bc = 1e9;
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const c = { x: box.x + sx * (box.w / 2 + 0.8), z: box.z + sz * (box.d / 2 + 0.8) };
+    if (dist(d, c) < 0.3 || (d.past && dist(d.past, c) < 0.1) || segBox(d, c, box, 0.3) >= 0 || obs.some((o) => inBox(c, o, 0.4))) continue;
+    const cost = dist(d, c) + dist(c, pt);
+    if (cost < bc) { bc = cost; best = c; }
+  }
+  d.via = best;
+  return best;
 }
 // Dehors, pour aller d'un côté à l'autre de l'usine : on longe les ruines par les coins
 function aroundSlab(d, pt) {
@@ -1128,10 +1180,12 @@ function goTo(d, pt, dt, obs, speed = 3.9) {
   // Assis au coin pause : il se lève et ressort par le bout du canapé avant de partir
   if (d.sat) { if (glide(d, sofaEnd(d, pt), dt, 2.4)) d.sat = false; return false; }
   const wp = waypoint(d, pt);
-  if (wp) { steer(d, wp.x, wp.z, speed, dt, obs, 0.35); d.moving = true; return false; }
+  const to = wp || pt;
   const r = Math.hypot(pt.x - d.x, pt.z - d.z);
-  if (r > 0.35) { steer(d, pt.x, pt.z, speed, dt, obs, 0.35); d.moving = true; return false; }
-  return true;
+  if (!wp && r <= 0.35) return true;
+  const via = detour(d, to, obs) || to;
+  steer(d, via.x, via.z, speed, dt, obs, 0.35); d.moving = true;
+  return false;
 }
 // ---------- coin pause ----------
 // 6 places assises (2 canapés face à face autour d'une table basse), puis debout autour avec un café
@@ -1147,7 +1201,7 @@ export function pauseSpot(i) {
   return { x: PAUSE.x + lx, z: PAUSE.z + lz, rot: Math.atan2(-lx, -lz), sit: false };
 }
 // Bout de canapé le plus proche (pour s'asseoir ou se lever sans traverser les meubles)
-function sofaEnd(d, toward) {
+export function sofaEnd(d, toward) {
   const lz = d.z - PAUSE.z > 0 ? 0.92 : -0.92;
   const side = toward.x - PAUSE.x >= 0 ? 1 : -1;
   return { x: PAUSE.x + side * 1.55, z: PAUSE.z + lz };
@@ -1164,9 +1218,11 @@ function glide(d, pt, dt, speed) {
 // Droïde spécialisé sans tâche : au coin pause, assis avec un café (ou debout autour quand les canapés sont pris)
 function rest(S, d, dt, obs) {
   d.restAt = S.time;
+  // En solo, la première place du canapé est celle du coéquipier IA
+  if (d.seat === 0 && S.mode === 'solo') d.seat = null;
   if (d.seat == null) {
     const taken = new Set(S.droids.filter((x) => x !== d && x.seat != null).map((x) => x.seat));
-    let i = 0;
+    let i = S.mode === 'solo' ? 1 : 0;
     while (taken.has(i)) i++;
     d.seat = i;
   }
@@ -1209,7 +1265,7 @@ function haul(S, d, dt, obs, max) {
       const m = S.machines[t.to];
       const q = !m ? 0 : MACHINES[m.type].store ? t.load : Math.min(needOf(S, m)[t.item] || 0, t.load);
       if (q) m.inp[t.item] = (m.inp[t.item] || 0) + q;
-      if (t.load - q > 0) { if (isDecl(t.item) && S.machines.zone) S.machines.zone.inp[t.item] = (S.machines.zone.inp[t.item] || 0) + t.load - q; else addStock(S, t.item, t.load - q); }
+      if (t.load - q > 0) { if (apart(t.item) && S.machines.zone) S.machines.zone.inp[t.item] = (S.machines.zone.inp[t.item] || 0) + t.load - q; else addStock(S, t.item, t.load - q); }
     }
     t.load = 0; d.carry = null; d.task = null;
   }
@@ -1231,9 +1287,9 @@ const BRAINS = {
         if (m.type === 'qualite' && hasAdjq(S)) continue;
         for (const [k, n] of Object.entries(m.out)) {
           if (n <= 0) continue;
-          if (isDecl(k) && !S.machines.zone) continue;
+          if (apart(k) && !S.machines.zone) continue;
           const sig = 'out>' + m.id + k;
-          if (!busy.has(sig)) cands.push({ score: n >= OUT_MAX - 1 ? 2.5 : 1, task: { from: m.id, to: isDecl(k) ? 'zone' : 'hq', item: k, sig } });
+          if (!busy.has(sig)) cands.push({ score: n >= OUT_MAX - 1 ? 2.5 : 1, task: { from: m.id, to: apart(k) ? 'zone' : 'hq', item: k, sig } });
         }
       }
       cands.sort((a, b) => b.score - a.score);
@@ -1261,7 +1317,8 @@ const BRAINS = {
             continue;
           }
           const src = Object.values(S.machines).find((x) => x !== m && (x.out[k] || 0) > 0);
-          const from = src ? src.id : (S.stock[k] || 0) > 0 ? 'hq' : null;
+          const z = S.machines.zone;
+          const from = src ? src.id : (S.stock[k] || 0) > 0 ? 'hq' : apart(k) && z && (z.inp[k] || 0) > 0 && m.type !== 'zone' ? 'zone' : null;
           if (!from) continue;
           const have = m.inp[k] || 0;
           cands.push({ score: (miss[k] > 0 ? 10 : 5) - have + (m.type === 'assembleur' ? 0.5 : 0), task: { from, to: m.id, item: k, want: n, sig } });
@@ -1289,7 +1346,7 @@ const BRAINS = {
       if (q) {
         for (const [k, n] of Object.entries(q.out)) {
           if (n <= 0) continue;
-          if (isRebut(k)) push(9, { from: 'qualite', to: rc ? 'recycleur' : 'hq', item: k, sig: 'aq>' + k });
+          if (isRebut(k)) push(9, { from: 'qualite', to: rc && rc.sel.includes('recyc') ? 'recycleur' : z ? 'zone' : 'hq', item: k, sig: 'aq>' + k });
           else push(8, { from: 'qualite', to: 'hq', item: k, sig: 'aq>' + k });
         }
         const room = Math.max(0, 6 - Object.entries(q.inp).reduce((a, [k, n]) => a + (isDecl(k) ? n : 0), 0));
@@ -1299,7 +1356,7 @@ const BRAINS = {
         if (m.type === 'qualite' || MACHINES[m.type].store) continue;
         for (const [k, n] of Object.entries(m.out)) if (n > 0 && isDecl(k) && z) push(6, { from: m.id, to: 'zone', item: k, sig: 'ad>' + m.id + k });
       }
-      if (rc) for (const [k, n] of Object.entries(S.stock)) if (n > 0 && isRebut(k) && (rc.inp[k] || 0) < 4) push(5, { from: 'hq', to: 'recycleur', item: k, want: 4, sig: 'ar>' + k });
+      if (rc && rc.sel.includes('recyc') && z) for (const [k, n] of Object.entries(z.inp)) if (n > 0 && isRebut(k) && (rc.inp[k] || 0) < 4) push(5, { from: 'zone', to: 'recycleur', item: k, want: 4, sig: 'ar>' + k });
       cands.sort((a, b) => b.score - a.score);
       if (!cands.length) { rest(S, d, dt, obs); return; }
       d.task = { ...cands[0].task, phase: 'pick', load: 0 };
@@ -1554,6 +1611,7 @@ export function goalProgress(S, g) {
     case 'recyc+': v = st.recycled - b.recyc; break;
     case 'surplus+': v = (st.surplus || 0) - (b.surplus || 0); break;
     case 'orders+': v = st.orders - b.orders; break;
+    case 'spec+': v = (st.spec || 0) - (b.spec || 0); break;
     case 'item+': v = (st.made[item] || 0) - (b.items[item] || 0); break;
     case 'work': v = S.droids.filter((d) => d.st === 'work').length; break;
     case 'crea': v = S.animals.filter((a) => a.st === 'installed').length; break;
