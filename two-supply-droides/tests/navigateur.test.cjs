@@ -281,7 +281,7 @@ const assert = (c, m) => { if (!c) throw new Error('ÉCHEC : ' + m); console.log
     await A.click('#btn-call');
     await A.evaluate(() => window.__ts.advance(6));
     assert(await until(A, () => /te rejoint/.test(document.getElementById('mode-name').textContent)), 'appelé, le coéquipier vient');
-    const lbl = async (x, z) => { await A.evaluate(([x, z]) => window.__ts.tp(x, z, Math.PI), [x, z]); await sleep(1200); return A.evaluate(() => document.getElementById('labels').textContent); };
+    const lbl = async (x, z) => { await A.evaluate(([x, z]) => window.__ts.tp(x, z, Math.PI), [x, z]); await sleep(1200); return A.evaluate(() => [...document.getElementById('labels').children].filter((e) => e.style.display !== 'none').map((e) => e.textContent).join(' ')); };
     assert(/Forge/.test(await lbl(-17, -10 + 1.2 + 1.5)), 'nom de la forge à 1,5 m');
     assert(!/Forge/.test(await lbl(-17, -10 + 1.2 + 6)), 'pas de nom de la forge à 6 m');
     await A.evaluate(() => window.__ts.tp(0, 3, Math.PI));
