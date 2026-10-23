@@ -419,3 +419,5 @@ b.warn, .warn { color: var(--yellow); }
 #orders .ord { display: flex; justify-content: space-between; gap: 8px; }
 #orders .ord.sp { color: #f2c14e; }
 #orders .ord.late { color: var(--bad); }
+#orders .ord.urg { color: #ff8a5c; }
+.upbtn { margin-top: 4px; }

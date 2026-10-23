@@ -1,10 +1,17 @@
-# Two Supply — Droïdes (version 0.6)
+# Two Supply — Droïdes (version 0.7)
 
 Usine de droïdes dans un terrain vague, en 20 niveaux, en solo (avec un coéquipier IA) ou à deux téléphones.
 
 **Jouer :** `https://wowponpon59-sketch.github.io/Claude-/two-supply-droides/`
 
 Les versions 0.2 et 0.3 restent dans l’historique Git. La version 0.1 (pain) est dans `two-supply/`.
+
+## Nouveautés de la 0.7
+
+- **Améliorations des machines** (menu Recettes) : 3 niveaux — cadence +20 %, pannes −30 %, sortie doublée (pas pour les droïdes ni les colis). On la demande, un ingénieur prend les pièces à l’entrepôt et vient l’installer. Les étoiles au-dessus de la machine et dans son nom montrent son niveau.
+- **Commandes urgentes** (à partir du niveau 10) : 3 minutes au chrono, prime double (⚡ en haut à gauche).
+- **Le Colosse** : une créature géante rôde une fois par niveau à partir du niveau 5 (5 minutes). Il faut l’encercler de près à deux, puis appuyer **en même temps** sur « Attraper ». Installé sur une machine : +100 % de cadence (+25 crédits). En solo, le coéquipier IA appuie avec toi.
+- **Camion de livraison** (à partir du niveau 3, toutes les 7 minutes) : il se gare devant un passage des ruines avec 14 matières premières ; l’un décharge, l’autre réceptionne (garder appuyé tous les deux). Il repart au bout de 3 minutes. En solo, le coéquipier IA réceptionne.
 
 ## Nouveautés de la 0.6
 
@@ -96,4 +103,4 @@ Deux onglets sur le même ordinateur : ajouter `?net=fake` à l’adresse.
 
 ## Tests
 
-Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3, de la 0.5 et de la 0.6, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.
+Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3, 0.5, 0.6 et 0.7, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.

@@ -1,7 +1,7 @@
 // Coéquipier piloté par l'ordinateur (mode solo) : il attend au coin pause, sur le canapé,
 // et vient se placer de l'autre côté dès qu'une tâche demande deux personnes (ou quand on l'appelle).
 import { POST_R, PART, SPEED, PLOTS, WORLD } from './config.js';
-import { postL, postR, pauseSpot, sofaEnd } from './sim.js';
+import { postL, postR, pauseSpot, sofaEnd, truckPost } from './sim.js';
 import { obstacles, steer } from './move.js';
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -56,6 +56,11 @@ export function botInput(S, bot, dt, aIn) {
     const aLeft = nearPost(postL(p));
     goal = aLeft ? postR(p) : postL(p);
     if (dist(bot.ent, goal) < 0.5) hold = true;
+  } else if (S.truck && ['L', 'R'].some((sd) => nearPost(truckPost(S.truck, sd)))) {
+    // Camion : le joueur décharge d'un côté, le coéquipier réceptionne de l'autre
+    why = 'camion';
+    goal = truckPost(S.truck, nearPost(truckPost(S.truck, 'L')) ? 'R' : 'L');
+    if (dist(bot.ent, goal) < 0.5) hold = true;
   } else if (readyPlot) {
     why = 'montage';
     const st = S.plots[readyPlot.id];
@@ -68,6 +73,8 @@ export function botInput(S, bot, dt, aIn) {
   } else if (hunting) {
     why = 'créature';
     const a = hunting;
+    // Le Colosse encerclé : on appuie sur « Attraper » en même temps que le joueur
+    if (a.sp === 'colosse' && a.st === 'corner' && dist(bot.ent, a) < 2.4) { bot.tapT = (bot.tapT || 0) - dt; if (bot.tapT <= 0) { tapNow = true; bot.tapT = 0.8; } }
     // Direction de fuite : à l'opposé du joueur (ou cap de la créature si le joueur est collé dessus)
     let dx = a.x - A.x, dz = a.z - A.z, l = Math.hypot(dx, dz);
     if (l < 1) { dx = Math.sin(a.rot); dz = Math.cos(a.rot); l = 1; }
@@ -134,5 +141,5 @@ export function botInput(S, bot, dt, aIn) {
 
 export function botLabel(bot) {
   if (bot.why === 'pause') return bot.seated ? 'en pause café' : 'va au coin pause';
-  return { caisse: 'porte la pièce lourde', montage: 'monte avec toi', panne: 'répare la panne avec toi', créature: 'prend la créature à revers', appel: 'te rejoint' }[bot.why] || '';
+  return { caisse: 'porte la pièce lourde', camion: 'décharge le camion avec toi', montage: 'monte avec toi', panne: 'répare la panne avec toi', créature: 'prend la créature à revers', appel: 'te rejoint' }[bot.why] || '';
 }

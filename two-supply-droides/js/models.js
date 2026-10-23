@@ -509,6 +509,11 @@ export function machineModel(type) {
     root.add(puff);
     anim.puff = puff;
   }
+  // Étoiles des améliorations (une par niveau), au-dessus du voyant
+  const stars = new Node().at(m.w / 2 - 0.2, (type === 'assembleur' ? 3.05 : type === 'quai' ? 2.8 : 2.0) + 0.32, -m.d / 2 + 0.3);
+  for (let k = 0; k < 3; k++) { const st = mesh(SP(0.09, 6, 4), mat([1, 0.85, 0.2], { emissive: [1.0, 0.75, 0.1], cast: false })); st.pos = [-k * 0.26, 0, 0]; st.scl = [1, 1.4, 0.5]; st.visible = false; stars.add(st); }
+  root.add(stars);
+  anim.stars = stars;
   // Étincelles quand elle est en panne
   const sparks = new Node().at(0, 1.2, m.d / 2 - 0.2);
   for (let k = 0; k < 6; k++) sparks.add(mesh(B(0.04, 0.04, 0.04), mat([1, 0.7, 0.2], { emissive: [1.0, 0.6, 0.1], unlit: 1, cast: false })));
@@ -589,6 +594,27 @@ export function lampPostsModel() {
   return root;
 }
 export const lampLights = () => LAMP_POSTS.map(([x, z]) => [x + (x > 0 ? -0.8 : 0.8), 3.2, z]);
+
+// Camion de livraison : cabine, caisse, roues, feux (la cabine vers +x)
+export function truckModel() {
+  const root = new Node();
+  const body = [], dark = [];
+  body.push({ g: B(2.9, 1.8, 2.1), p: [-0.7, 0.55, 0], c: [0.85, 0.86, 0.88] });
+  body.push({ g: B(2.92, 0.25, 2.12), p: [-0.7, 1.3, 0], c: [0.85, 0.2, 0.15] });
+  body.push({ g: B(1.3, 1.25, 2.0), p: [1.45, 0.55, 0], c: [0.2, 0.42, 0.75] });
+  body.push({ g: B(0.9, 0.5, 2.02), p: [1.6, 1.15, 0], c: [0.55, 0.75, 0.85] });
+  dark.push({ g: B(4.4, 0.25, 1.9), p: [0, 0.35, 0], c: C.dark });
+  for (const x of [-1.6, -0.7, 1.5]) for (const z of [-1.0, 1.0]) dark.push({ g: CY(0.42, 0.42, 0.3, 14, -0.15), p: [x, 0.42, z], r: [Math.PI / 2, 0, 0], c: [0.12, 0.12, 0.13] });
+  dark.push({ g: B(0.06, 1.7, 2.0), p: [-2.17, 0.6, 0], c: [0.6, 0.6, 0.62] });
+  root.add(meshes(bake(body), mat([1, 1, 1], { pattern: P.paint, rough: 0.45 })), meshes(bake(dark), mat([1, 1, 1], { pattern: P.rubber })));
+  for (const z of [-0.7, 0.7]) root.add(mesh(B(0.04, 0.16, 0.3), mat([1, 0.95, 0.8], { emissive: [1, 0.9, 0.6], cast: false })).at(2.12, 0.75, z), mesh(B(0.04, 0.14, 0.24), mat([0.8, 0.1, 0.05], { emissive: [0.9, 0.1, 0.05], cast: false })).at(-2.2, 0.75, z));
+  const crates = [];
+  for (let k = 0; k < 6; k++) crates.push({ g: B(0.55, 0.45, 0.55), p: [-1.7 + (k % 3) * 0.62, 0.75 + Math.floor(k / 3) * 0.47, -0.4 + (k % 2) * 0.6], c: [0.75, 0.58, 0.38] });
+  const load = meshes(bake(crates), mat([1, 1, 1], { pattern: P.wood }));
+  root.add(load);
+  root.load = load;
+  return root;
+}
 
 // Ciel : grande sphère vue de l'intérieur, dessinée par le shader (dégradé, soleil, nuages, étoiles)
 export function skyModel() {
@@ -954,6 +980,8 @@ export function droidModel() {
 
 // ---------- créatures ----------
 export function animalModel(sp) {
+  // Le Colosse : un rouillard géant
+  if (sp === 'colosse') { const g = animalModel('rouillard'); g.scl = [2.3, 2.3, 2.3]; return g; }
   const root = new Node();
   const legs = [];
   const parts = {};

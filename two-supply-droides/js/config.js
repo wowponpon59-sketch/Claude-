@@ -1,7 +1,7 @@
-// Two Supply — Droïdes (version 0.6)
+// Two Supply — Droïdes (version 0.7)
 // Repère : x vers l'est, z vers le sud, y vers le haut. Unité : mètre.
 
-export const VERSION = '0.6';
+export const VERSION = '0.7';
 export const SAVE_KEY = 'twosupply-droides-save-v04';
 
 export const WORLD = { half: 40 };
@@ -268,6 +268,14 @@ export const DROIDS = {
 for (const [k, d] of Object.entries(DROIDS)) ITEMS['colis_' + k] = { name: 'Colis : ' + (k === 'ouvrier' ? 'droïde standard' : d.name.toLowerCase()), kind: 'colis', droid: k, css: d.css };
 ITEM_ORDER.push(...Object.keys(DROIDS).map((k) => 'colis_' + k));
 export const MAX_PER_TYPE = 3;   // 3 droïdes spécialisés au plus par métier
+// Améliorations des machines (0.7), installées par un ingénieur : 3 niveaux
+export const UPGRADES = [
+  { name: 'Cadence +20 %', cost: { fer: 4, circuit: 1 } },
+  { name: 'Pannes −30 %', cost: { tole: 2, fil: 2 } },
+  { name: 'Sortie doublée', cost: { circuitA: 1, tole: 2 } },
+];
+// Camion de livraison (0.7) : à partir du niveau 3, déchargé à deux devant un passage des ruines
+export const TRUCK = { from: 2, first: 120, every: 420, stay: 180, n: 14, w: 4.4, d: 2.2 };
 export const SPEC_ORDER = ['logistique', 'maintenance', 'recherche', 'ingenieur', 'chefmaint', 'expert', 'qualite', 'adjq', 'production', 'process', 'achat', 'adjoint', 'chef'];
 
 // ---------- tenues : elles se cumulent, une par emplacement ----------
@@ -319,14 +327,17 @@ export const LOOKS = {
   chef: { casquette: '#e8b923', casque: '#e8b923', tablier: '#1a1a1a', gilet: '#1a1a1a', bande: '#e8b923', noeud: '#d42a2a', style: 'noir et or, nœud rouge' },
 };
 // Crédits : objectifs, niveaux, et en faisant tourner l'usine
-export const CREDITS = { goal: 10, level: 30, droid: 2, ctrl: 1, repair: 3, heavy: 6, creature: 5 };
+export const CREDITS = { goal: 10, level: 30, droid: 2, ctrl: 1, repair: 3, heavy: 6, creature: 5, giant: 25, truck: 8 };
 
 // Créatures du terrain vague (inventées) : capturées à deux, elles boostent une machine pour toujours.
 export const ANIMALS = {
   rouillard: { name: 'Rouillard', desc: 'Boule de plaques rouillées sur six pattes fines, un grand œil ambré.', speed: 1.3, flee: 4.9 },
   vitrelle: { name: 'Vitrelle', desc: 'Corps de verre sur trois échasses, côtes de cuivre et cœur lumineux.', speed: 1.1, flee: 5.1 },
   pistoche: { name: 'Pistoche', desc: 'Long et bas, pattes à pistons, ailerons de tôle et queue en câble.', speed: 1.5, flee: 4.8 },
+  // Créature géante (0.7) : une fois par niveau à partir du niveau 5 ; à encercler et attraper à deux en même temps
+  colosse: { name: 'Colosse', desc: 'Un rouillard géant, carapace de vieilles carrosseries. Installé sur une machine : +100 % de cadence.', speed: 0.9, flee: 4.3, giant: true, boost: 1.0 },
 };
+export const GIANT = { from: 4, delay: 90, ttl: 300, hold: 1.5, pair: 3 };
 export const ANIMAL_COUNT = 6;
 
 // ---------- 20 niveaux : une nouveauté, puis du rodage ----------

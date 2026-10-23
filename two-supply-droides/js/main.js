@@ -239,7 +239,7 @@ function beginGame(resumed) {
 }
 
 // ---------- messages réseau ----------
-const CMDS = new Set(['spec', 'take', 'put', 'putall', 'request', 'recipes', 'buy', 'wear', 'pack', 'ztake', 'zput', 'zputall', 'trash', 'move', 'mebuy', 'mewear', 'mecol']);
+const CMDS = new Set(['spec', 'take', 'put', 'putall', 'request', 'recipes', 'buy', 'wear', 'pack', 'ztake', 'zput', 'zputall', 'trash', 'move', 'mebuy', 'mewear', 'mecol', 'upgrade']);
 function hostMessage(m) {
   if (!m || typeof m !== 'object') return;
   const r = app.remote;
@@ -323,6 +323,7 @@ function openMenu(kind, mach) {
 function handleFx(f) {
   switch (f.k) {
     case 'toast': UI.toast(f.text, f.tone); break;
+    case 'giant': case 'truck': UI.pointTo(f.x, f.z, 6); break;
     case 'sfx': play(f.s); break;
     case 'call':
       UI.callAlert(f.text, other(app.myId));

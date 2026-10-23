@@ -1,10 +1,10 @@
 // Interface : écrans, HUD, menus, commandes tactiles, caméra et repères au-dessus des objets.
 import {
   ITEMS, ITEM_ORDER, RAW, RAW_LEVEL, SAC_MAX, NODE_TYPES, MACHINES, PLOTS, ENTREPOT, PART, HEAVY, DROIDS, SPEC_ORDER,
-  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, ME_SLOTS, ME_OUTFITS, ME_COLORS, QC_BASES, MAX_PER_TYPE, LABEL_RANGE, ANIMAL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, other,
+  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, ME_SLOTS, ME_OUTFITS, ME_COLORS, QC_BASES, MAX_PER_TYPE, LABEL_RANGE, ANIMAL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, UPGRADES, TRUCK, other,
 } from './config.js';
 import { NODES, height, PLOT_BY_ID, plotBox } from './world.js';
-import { postL, postR, plotUnlocked, partOut, typeCount, ordersNeed, orderText, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, genText, apart, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
+import { postL, postR, plotUnlocked, partOut, typeCount, ordersNeed, orderText, truckPost, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, genText, apart, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
 import { boxDist } from './move.js';
 
 const $ = (id) => document.getElementById(id);
@@ -111,7 +111,7 @@ export function updateHud(st, myId, extra) {
   // Commandes des clients : ce qu'il faut emballer et livrer au quai, et le temps qui reste
   const od = $('orders'), act = st.machines.quai ? activeOrders(st) : [];
   od.hidden = !act.length;
-  if (act.length) setHtml(od, act.slice(0, 3).map((o) => `<div class="ord ${o.special ? 'sp' : ''} ${o.t < 60 ? 'late' : ''}"><span>${o.special ? '★ ' : '📦 '}${orderText(o)}</span><span>${clock(o.t)}</span></div>`).join(''));
+  if (act.length) setHtml(od, act.slice(0, 3).map((o) => `<div class="ord ${o.special ? 'sp' : ''} ${o.urgent ? 'urg' : ''} ${o.t < 60 ? 'late' : ''}"><span>${o.urgent ? '⚡ ' : o.special ? '★ ' : '📦 '}${orderText(o)}${o.urgent ? ' · prime ×2' : ''}</span><span>${clock(o.t)}</span></div>`).join(''));
   const pw = $('power');
   if (needPower(st)) {
     const gen = st.machines.generateur;
@@ -249,6 +249,7 @@ export function fillRecettes(st, machId, send) {
   }
   html += '</div>';
   if (m.type === 'recycleur') html += trashHtml(st, m);
+  html += upgradeHtml(st, m);
   const body = $('recettes-body');
   if (body.dataset.sig === html) return;
   body.dataset.sig = html;
@@ -262,6 +263,19 @@ export function fillRecettes(st, machId, send) {
   body.querySelectorAll('.tbtn').forEach((b) => b.addEventListener('click', () => {
     send({ c: 'trash', mach: machId, item: b.dataset.k, on: !b.classList.contains('on') });
   }));
+  body.querySelectorAll('.upbtn').forEach((b) => b.addEventListener('click', () => { if (!b.disabled) send({ c: 'upgrade', mach: machId }); }));
+}
+// Améliorations : 3 niveaux installés par un ingénieur, avec des pièces de l'entrepôt
+function upgradeHtml(st, m) {
+  const up = m.up || 0;
+  let h = `<h4 class="trash-h">Améliorations ${'★'.repeat(up)}<span class="muted">${'☆'.repeat(UPGRADES.length - up)}</span></h4>`;
+  h += `<p class="sub">${UPGRADES.map((u, i) => `${i < up ? '✓' : i + 1 + '.'} ${u.name}`).join(' · ')}</p>`;
+  if (up >= UPGRADES.length) return h + '<p class="muted">Machine au maximum.</p>';
+  const next = UPGRADES[up];
+  const eng = st.droids.some((d) => d.type === 'ingenieur' && d.st === 'work');
+  const miss = Object.entries(next.cost).filter(([k, n]) => (st.stock[k] || 0) < n);
+  if (m.upWant) return h + `<p class="muted">Demandée : ${miss.length ? 'il manque à l’entrepôt ' + listItems(Object.fromEntries(miss.map(([k, n]) => [k, n - (st.stock[k] || 0)]))) : 'un ingénieur arrive pour l’installer'}.</p>`;
+  return h + `<button class="btn small-btn upbtn" ${eng ? '' : 'disabled'}>Améliorer : ${next.name} · ${listItems(next.cost)}</button>${eng ? '' : '<p class="muted">Il faut un ingénieur au travail.</p>'}`;
 }
 // Fractions lisibles : ½, ¼, 1 ½…
 const frac = (v) => {
@@ -743,7 +757,7 @@ export function worldLabels(st, myId, me) {
     }
     const m = st.machines[p.id];
     const prod = isProd(m);
-    let html = chip(m.broken === 'heavy' ? 'duo' : 'solo', prod ? `${name} · ${Math.round(cadence(m, st) * 100)} %` : name, m.broken ? ' alert' : '');
+    let html = chip(m.broken === 'heavy' ? 'duo' : 'solo', (prod ? `${name} · ${Math.round(cadence(m, st) * 100)} %` : name) + (m.up ? ' ' + '★'.repeat(m.up) : ''), m.broken ? ' alert' : '');
     if (m.broken === 'heavy') {
       const fixer = ['A', 'B'].find((id) => st.work[id] && st.work[id].kind === 'fixheavy' && st.work[id].mach === p.id);
       html += pill(m.cut || '', fixer || '') + gauge(m.fixT / T.heavyRepair, 'duo') + sub('Panne lourde : couper à gauche, réparer à droite');
@@ -778,6 +792,12 @@ export function worldLabels(st, myId, me) {
     const keys = ITEM_ORDER.filter((k) => (m.out[k] || 0) > 0).slice(0, 3);
     const y = ['assembleur', 'quai'].includes(p.type) ? 3.5 : 2.8;
     add('o' + m.id, p.x, y + (close(plotBox(p)) ? 1.9 : 0.4), p.z, `<div class="outb">${keys.map((k) => `<span class="it">${itemIcon(k)}${m.out[k]}</span>`).join('')}</div>`);
+  }
+
+  // Camion de livraison
+  if (st.truck && within(st.truck.x, st.truck.z, ANIMAL_RANGE)) {
+    const tr = st.truck, side = (s) => { const w = ['A', 'B'].find((id) => st.work[id] && st.work[id].kind === 'truck' && st.work[id].side === s); if (w) return w; const n = near(truckPost(tr, s)); return n ? 'h' + n : ''; };
+    add('truck', tr.x, height(tr.x, tr.z) + 3.0, tr.z, chip('duo', 'Camion de livraison') + pill(side('L'), side('R')) + sub(`${listItems(tr.items)} · ${clock(tr.t)}`) + sub('À deux : décharger d’un côté, réceptionner de l’autre'));
   }
 
   // Pièces lourdes : nom, poignées et machine de destination

@@ -1,7 +1,7 @@
 // Simulation de référence (téléphone hôte, ou le seul téléphone en solo).
 import {
   REACH, POST_R, SAC_MAX, CARRY_SPEED, OUT_MAX, T, SCREWS, ITEMS, NODE_TYPES, MACHINES, PLOTS, ENTREPOT,
-  START, CORE, PART, HEAVY, needsPart, DROIDS, SPEC_ORDER, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_BASES, RAW, RAW_LEVEL, OUTFITS, PACK, CREDITS,
+  START, CORE, PART, HEAVY, needsPart, DROIDS, SPEC_ORDER, UPGRADES, GIANT, TRUCK, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_BASES, RAW, RAW_LEVEL, OUTFITS, PACK, CREDITS,
   SLAB, WORLD, PAUSE, MAX_PER_TYPE, ME_OUTFITS, ME_COLORS, ME_DEFAULT_COL, RAW_CONTENT, RECYCLABLE, isRaw, isDecl, isRebut, other,
 } from './config.js';
 import { NODES, ANIMAL_HOMES, PLOT_BY_ID, plotBox, genWorld, slabDist, GATES, applyLayout, placeWhy, PART_SPOTS } from './world.js';
@@ -86,6 +86,7 @@ export function restoreState(S) {
   for (const m of Object.values(S.machines)) { m.manual = null; m.cut = null; m.run = false; }
   for (const d of S.droids) {
     if (d.task && d.task.load) addStock(S, d.task.item, d.task.load);
+    if (d.task && d.task.kind === 'upgrade' && !d.task.done) for (const [k, n] of Object.entries(d.task.cost)) addStock(S, k, n);
     if (d.st === 'follow') { d.st = 'idle'; d.who = null; }
     d.task = null; d.carry = null; d.repairing = false;
   }
@@ -262,7 +263,8 @@ export function missingIn(S, m) {
   return out;
 }
 export function cadence(m, S) {
-  let b = 1 + T.animalBoost * m.animals.length;
+  let b = 1 + m.animals.reduce((a, sp) => a + (ANIMALS[sp].boost ?? T.animalBoost), 0);
+  if ((m.up || 0) >= 1) b *= 1.2;
   if (S) {
     const proc = S.droids.filter((d) => d.type === 'process' && d.st === 'work').length;
     const chef = S.droids.some((d) => d.type === 'chef' && d.st === 'work');
@@ -369,7 +371,7 @@ export function targets(S, id) {
     }
     if (!near) continue;
     if (m.broken) { add(pl.id, d, { act: 'repair', label: 'Réparer la panne (garder appuyé)' }); continue; }
-    if (myAnimal && isProd(m) && m.animals.length < T.animalMax) { add(pl.id, d, { act: 'install', label: `Installer ${ANIMALS[myAnimal.sp].name} (+25 %)` }); continue; }
+    if (myAnimal && isProd(m) && m.animals.length < T.animalMax) { add(pl.id, d, { act: 'install', label: `Installer ${ANIMALS[myAnimal.sp].name} (+${Math.round((ANIMALS[myAnimal.sp].boost ?? T.animalBoost) * 100)} %)` }); continue; }
     if (def.store) {
       const nd = declCount(p);
       if (folZone) add(pl.id, d, { act: 'assignHQ', label: `Mettre au travail : ${DROIDS[folZone.type].name.toLowerCase()}` });
@@ -457,13 +459,21 @@ export function targets(S, id) {
     }
   }
 
+  // Camion de livraison : décharger d'un côté, réceptionner de l'autre (garder appuyé, à deux)
+  if (S.truck) for (const side of ['L', 'R']) {
+    const pt = truckPost(S.truck, side), d = dist(p, pt);
+    if (d > POST_R) continue;
+    const mine = S.work[id] && S.work[id].kind === 'truck' && S.work[id].side === side;
+    add('truck' + side, d, { kind: 'duo', act: 'truck', side, label: mine ? (side === 'L' ? 'Décharge… (garde appuyé)' : 'Réceptionne… (garde appuyé)') : side === 'L' ? 'Décharger le camion (garder)' : 'Réceptionner (garder)' });
+  }
+
   for (const a of S.animals) {
     if (a.st !== 'wander' && a.st !== 'flee' && a.st !== 'corner') continue;
     const d = dist(p, a);
     if (d > 2.6) continue;
     if (myAnimal) add('animal' + a.id, d, { off: true, kind: 'duo', label: 'Tu tiens déjà une créature' });
     // Créature encerclée : le bouton « Attraper » passe avant tout le reste (débris, chantier ou machine voisine)
-    else if (a.st === 'corner') add('animal' + a.id, d - 5, { kind: 'duo', act: 'catch', animal: a.id, label: `Attraper le ${ANIMALS[a.sp].name}` });
+    else if (a.st === 'corner') add('animal' + a.id, d - 5, { kind: 'duo', act: 'catch', animal: a.id, label: ANIMALS[a.sp].giant ? (a.grab && a.grab[id] && S.time - a.grab[id] < GIANT.pair ? 'Attendez-vous : à deux en même temps !' : 'Attraper le Colosse (à deux en même temps)') : `Attraper le ${ANIMALS[a.sp].name}` });
     else add('animal' + a.id, d + 0.4, { off: true, kind: 'duo', label: 'Il esquive : prenez-le en tenaille à deux' });
   }
 
@@ -512,6 +522,10 @@ function press(S, id) {
       if (!(S.work[o] && S.work[o].kind === 'fixheavy')) call(S, o, 'Ton partenaire a coupé le courant : va réparer de l’autre côté !', postR(PLOT_BY_ID[t.mach]).x, postR(PLOT_BY_ID[t.mach]).z);
       break;
     case 'fixheavy': S.work[id] = { kind: 'fixheavy', key: t.key, mach: t.mach }; break;
+    case 'truck':
+      S.work[id] = { kind: 'truck', key: t.key, side: t.side };
+      if (!(S.work[o] && S.work[o].kind === 'truck')) { const pt = truckPost(S.truck, t.side === 'L' ? 'R' : 'L'); call(S, o, t.side === 'L' ? 'Ton partenaire décharge le camion : va réceptionner à côté !' : 'Ton partenaire réceptionne : va décharger le camion !', pt.x, pt.z); }
+      break;
     case 'menu': fx(S, id, 'menu', { menu: t.menu }); break;
     case 'deposit': {
       const n = depositable(p);
@@ -647,6 +661,12 @@ function press(S, id) {
     case 'ungrab': for (const c of Object.values(S.parts)) if (c.hand[id]) c.hand[id] = null; p.locked = false; break;
     case 'catch': {
       const a = S.animals.find((x) => x.id === t.animal);
+      // Le Colosse : les deux joueurs doivent appuyer à moins de 3 secondes d'écart
+      if (ANIMALS[a.sp].giant) {
+        a.grab = a.grab || {}; a.grab[id] = S.time;
+        if (!(a.grab[o] && S.time - a.grab[o] < GIANT.pair)) { sfx(S, id, 'clong'); call(S, o, 'Le Colosse est encerclé : appuie sur « Attraper » toi aussi !', a.x, a.z); break; }
+        earn(S, CREDITS.giant, a);
+      }
       a.st = 'caught'; a.by = id;
       sfx(S, 'all', 'ok');
       toast(S, 'all', `${ANIMALS[a.sp].name} capturé ! Amène-le sur une machine.`, 'good');
@@ -716,6 +736,8 @@ function releaseDroid(S, dr) {
   // Ingénieur repris en plein travail : il lâche la pièce lourde et le montage
   if (dr.task && dr.task.part && S.parts[dr.task.part]) { const c = S.parts[dr.task.part]; if (c.eng && c.eng.includes(dr.id)) c.eng = null; if (dr.task.kind === 'help') c.hand.E = null; }
   for (const st of Object.values(S.plots)) if (st.holder === 'E' + dr.id) st.holder = null;
+  // Amélioration pas encore installée : les pièces retournent à l'entrepôt
+  if (dr.task && dr.task.kind === 'upgrade' && !dr.task.done) for (const [k, n] of Object.entries(dr.task.cost)) addStock(S, k, n);
   if (dr.task && dr.task.load && dr.task.item) addStock(S, dr.task.item, dr.task.load);
   dr.job = null; dr.job2 = null; dr.task = null; dr.carry = null; dr.repairing = false;
 }
@@ -797,6 +819,16 @@ function command(S, id, e) {
       break;
     }
     // Aménagement : déplacer une machine construite (elle garde son contenu)
+    // Amélioration d'une machine : un ingénieur viendra l'installer (avec les pièces de l'entrepôt)
+    case 'upgrade': {
+      const m = S.machines[e.mach];
+      if (!m || !isProd(m) || (m.up || 0) >= UPGRADES.length || m.upWant) return;
+      if (!S.droids.some((d) => d.type === 'ingenieur' && d.st === 'work')) { toast(S, id, 'Il faut un ingénieur au travail (à l’entrepôt) pour installer une amélioration.', 'warn'); sfx(S, id, 'err'); return; }
+      m.upWant = true;
+      sfx(S, id, 'ok');
+      toast(S, 'all', `Amélioration demandée : ${UPGRADES[m.up || 0].name.toLowerCase()}. Un ingénieur va l’installer.`, 'info');
+      break;
+    }
     case 'move': {
       const m = S.machines[e.mach];
       const x = Math.round(+e.x * 2) / 2, z = Math.round(+e.z * 2) / 2;
@@ -943,6 +975,7 @@ export function step(S, dt, inputs) {
   animals(S, dt);
   nodes(S, dt);
   orders(S, dt);
+  truck(S, dt);
   goals(S);
   for (const id of IDS) {
     const t = targets(S, id)[0];
@@ -1139,7 +1172,7 @@ function machines(S, dt) {
     m.run = true;
     m.t += dt * cadence(m, S);
     if (S.time >= T.panneStart) {
-      m.wear -= dt * panneRate(S);
+      m.wear -= dt * panneRate(S) * upWear(m);
       if (m.wear <= 0) { breakdown(S, m); continue; }
     }
     if (m.t < r.time) continue;
@@ -1153,8 +1186,11 @@ function machines(S, dt) {
         S.droids = S.droids.filter((d) => d !== dr);
       }
       for (const [k, n] of Object.entries(r.in)) { m.inp[k] -= n; if (!m.inp[k]) delete m.inp[k]; }
-      for (const [k, n] of Object.entries(r.out)) {
+      // Amélioration « Sortie doublée » (pas pour les droïdes ni les colis)
+      const mult = (m.up || 0) >= 3 && !r.droid ? 2 : 1;
+      for (const [k, n0] of Object.entries(r.out)) {
         if (k === 'droide') { spawnDroid(S, m); continue; }
+        const n = n0 * mult;
         // Une fois le contrôle qualité en place, 20 % des pièces sortent déclassées
         let nd = 0;
         if (QC_BASES[k] && qcActive(S) && !MACHINES[m.type].noDecl) for (let i = 0; i < n; i++) if (Math.random() < T.declRate) nd += 1;
@@ -1171,13 +1207,14 @@ function machines(S, dt) {
   if (S.time >= T.panneStart) {
     for (const m of Object.values(S.machines)) {
       if (!isProd(m) || m.broken || m.run) continue;
-      m.wear -= dt * T.idleWear * panneRate(S);
+      m.wear -= dt * T.idleWear * panneRate(S) * upWear(m);
       if (m.wear <= 0) breakdown(S, m);
     }
   }
 }
-// Plus de pannes à chaque niveau
+// Plus de pannes à chaque niveau ; amélioration « Pannes −30 % »
 const panneRate = (S) => 1 + T.panneGrow * S.level;
+const upWear = (m) => ((m.up || 0) >= 2 ? 0.7 : 1);
 
 // Contrôle d'une pièce déclassée, ou recyclage d'un rebut
 function produceAny(S, m, r) {
@@ -1575,6 +1612,20 @@ const BRAINS = {
     if (!d.task) { rest(S, d, dt, obs); return; }
     const t = d.task, key = 'E' + d.id;
     if (t.kind === 'carry' || t.kind === 'help') { engineerCarry(S, d, dt, obs); return; }
+    if (t.kind === 'upgrade') {
+      const m = S.machines[t.mach];
+      if (!m) { d.task = null; return; }
+      d.carry = 'tole';
+      if (!goTo(d, front(PLOT_BY_ID[m.id]), dt, obs, 3.6)) return;
+      d.carry = null; d.repairing = true;
+      t.t = (t.t || 0) + dt;
+      if (t.t >= 6) {
+        m.up = (m.up || 0) + 1; m.upWant = false; t.done = true; d.task = null;
+        sfx(S, 'all', 'won');
+        toast(S, 'all', `${MACHINES[m.type].name} améliorée (niveau ${m.up}) : ${UPGRADES[m.up - 1].name.toLowerCase()}.`, 'good');
+      }
+      return;
+    }
     const pl = PLOT_BY_ID[t.plot], st = S.plots[pl.id];
     if (st.built) { d.task = null; return; }
     if (t.kind === 'deliver') {
@@ -1712,7 +1763,16 @@ function engineersPlan(S) {
     // 3. Livrer les matériaux qui sont à l'entrepôt
     if (!has(p.id, 'deliver') && Object.entries(missingFor(S, p.id)).some(([k, n]) => n > 0 && (S.stock[k] || 0) > 0)) give({ kind: 'deliver', plot: p.id });
   }
-  // 4. À deux : aller chercher une pièce lourde dans le terrain vague
+  // 4. Installer une amélioration demandée (les pièces sont prises à l'entrepôt)
+  for (const m of Object.values(S.machines)) {
+    if (!free.length) break;
+    if (!m.upWant || eng.some((x) => x.task && x.task.mach === m.id)) continue;
+    const cost = UPGRADES[m.up || 0].cost;
+    if (!Object.entries(cost).every(([k, n]) => (S.stock[k] || 0) >= n)) continue;
+    for (const [k, n] of Object.entries(cost)) addStock(S, k, -n);
+    give({ kind: 'upgrade', mach: m.id, cost });
+  }
+  // 5. À deux : aller chercher une pièce lourde dans le terrain vague
   for (const [pid, c] of Object.entries(S.parts)) {
     if (free.length < 2) break;
     if (!partOut(S, pid) || c.eng || c.hand.A || c.hand.B || eng.some((x) => x.task && x.task.part === pid)) continue;
@@ -1821,9 +1881,11 @@ function animals(S, dt) {
       const cos = ((u.p.x - a.x) * (v.p.x - a.x) + (u.p.z - a.z) * (v.p.z - a.z)) / (u.d * v.d || 1);
       // En tenaille (après avoir un peu fui : pas de capture par hasard), ou essoufflée et entourée de près par les deux joueurs
       cornered = (cos < -0.2 && a.tired > 0.6) || (a.tired > 4 && u.d < 3.2 && v.d < 3.2);
-    }
+      // Le Colosse : il faut le tenir en tenaille, de près, un moment
+      if (def.giant) { a.hold = cornered && u.d < 3.6 && v.d < 3.6 ? (a.hold || 0) + dt : 0; cornered = a.hold > GIANT.hold || (a.cornerT > 0 && cornered); }
+    } else if (def.giant) a.hold = 0;
     // Une fois encerclée, elle reste bloquée au moins 2 secondes : le temps d'appuyer sur « Attraper »
-    if (cornered) a.cornerT = 2;
+    if (cornered) a.cornerT = def.giant ? 3 : 2;
     else if (a.cornerT > 0 && near.length) { a.cornerT -= dt; cornered = true; }
     else a.cornerT = 0;
     if (cornered) {
@@ -1867,7 +1929,8 @@ function animals(S, dt) {
       } else { steer(a, a.tx, a.tz, def.speed, dt, obs, 0.4); a.moving = true; }
     }
   }
-  if (S.animals.filter((a) => a.st !== 'installed').length < ANIMAL_COUNT) {
+  giant(S, dt);
+  if (S.animals.filter((a) => a.st !== 'installed' && !ANIMALS[a.sp].giant).length < ANIMAL_COUNT) {
     S.animalT -= dt;
     if (S.animalT <= 0) {
       spawnAnimal(S, ANIMAL_HOMES[Math.floor(Math.random() * ANIMAL_HOMES.length)], Object.keys(ANIMALS)[Math.floor(Math.random() * 3)]);
@@ -1876,11 +1939,88 @@ function animals(S, dt) {
   }
 }
 
+// Le Colosse : une fois par niveau à partir du niveau 5, il rôde quelques minutes dans le terrain vague
+function giant(S, dt) {
+  if (S.level < GIANT.from) return;
+  const g = S.animals.find((a) => ANIMALS[a.sp].giant && a.st !== 'installed');
+  if (g) {
+    if (g.st === 'caught') return;
+    g.ttl = (g.ttl ?? GIANT.ttl) - dt;
+    if (g.ttl <= 0) { S.animals = S.animals.filter((a) => a !== g); toast(S, 'all', 'Le Colosse est reparti dans le terrain vague.', 'info'); }
+    return;
+  }
+  if (S.giantLvl === S.level) return;
+  S.giantT = (S.giantT ?? GIANT.delay) - dt;
+  if (S.giantT > 0) return;
+  S.giantLvl = S.level; S.giantT = GIANT.delay;
+  const home = ANIMAL_HOMES[Math.floor(Math.random() * ANIMAL_HOMES.length)];
+  spawnAnimal(S, home, 'colosse');
+  S.animals[S.animals.length - 1].ttl = GIANT.ttl;
+  sfx(S, 'all', 'order');
+  toast(S, 'all', 'Un Colosse rôde dans le terrain vague ! Encerclez-le à deux et attrapez-le en même temps (+100 % sur une machine).', 'warn');
+  fx(S, 'all', 'giant', { x: home.x, z: home.z });
+}
+
 function nodes(S, dt) {
   for (let i = 0; i < S.nodes.length; i++) {
     if (S.nodes[i] > 0) continue;
     S.nodeT[i] -= dt;
     if (S.nodeT[i] <= 0) S.nodes[i] = NODE_TYPES[NODES[i].type].qty;
+  }
+}
+
+// ---------- camion de livraison ----------
+// Il arrive devant un passage des ruines avec des matières premières ; on le décharge à deux (un dans le camion, un qui réceptionne).
+export function truckPost(tr, side) {
+  const bx = tr.x - tr.dx * (TRUCK.w / 2 + 0.7), bz = tr.z - tr.dz * (TRUCK.w / 2 + 0.7);
+  const s = side === 'L' ? -0.85 : 0.85;
+  return { x: bx - tr.dz * s, z: bz + tr.dx * s };
+}
+function truck(S, dt) {
+  if (S.level < TRUCK.from) return;
+  const tr = S.truck;
+  if (!tr) {
+    S.truckT = (S.truckT ?? TRUCK.first) - dt;
+    if (S.truckT > 0) return;
+    S.truckT = TRUCK.every;
+    // Devant un passage des ruines dégagé, l'arrière tourné vers l'usine
+    const obs = obstacles(S);
+    for (const g of GATES.slice().sort(() => Math.random() - 0.5)) {
+      const ox = g.out.x - g.in.x, oz = g.out.z - g.in.z, l = Math.hypot(ox, oz), dx = ox / l, dz = oz / l;
+      const x = g.out.x + dx * (TRUCK.w / 2 + 2.2), z = g.out.z + dz * (TRUCK.w / 2 + 2.2);
+      const w = Math.abs(dx) > 0.5 ? TRUCK.w : TRUCK.d, d = Math.abs(dx) > 0.5 ? TRUCK.d : TRUCK.w;
+      if (Math.abs(x) > WORLD.half - 4 || Math.abs(z) > WORLD.half - 4) continue;
+      if (obs.some((o) => (o.c ? Math.abs(o.x - x) < w / 2 + o.r + 0.5 && Math.abs(o.z - z) < d / 2 + o.r + 0.5 : Math.abs(o.x - x) < (w + o.w) / 2 + 0.5 && Math.abs(o.z - z) < (d + o.d) / 2 + 0.5))) continue;
+      // Une dizaine de matières premières déjà utiles
+      const known = RAW.filter((k) => RAW_LEVEL[k] <= S.level), items = {};
+      for (let k = 0; k < TRUCK.n; k++) { const it = known[Math.floor(Math.random() * known.length)]; items[it] = (items[it] || 0) + 1; }
+      S.truck = { x, z, dx, dz, items, t: TRUCK.stay, prog: 0, n: TRUCK.n };
+      sfx(S, 'all', 'order');
+      toast(S, 'all', 'Un camion de livraison attend devant les ruines : déchargez-le à deux !', 'info');
+      fx(S, 'all', 'truck', { x, z });
+      return;
+    }
+    return;
+  }
+  tr.t -= dt;
+  const a = S.work.A, b = S.work.B;
+  if (a && b && a.kind === 'truck' && b.kind === 'truck' && a.side !== b.side) {
+    tr.prog += dt;
+    while (tr.prog >= 0.5 && sum(tr.items) > 0) {
+      tr.prog -= 0.5;
+      const k = Object.keys(tr.items).find((x) => tr.items[x] > 0);
+      tr.items[k] -= 1; if (!tr.items[k]) delete tr.items[k];
+      addStock(S, k, 1);
+      sfx(S, 'all', 'pick');
+    }
+  }
+  if (!sum(tr.items)) {
+    earn(S, CREDITS.truck, tr);
+    toast(S, 'all', `Camion déchargé : ${tr.n} matières premières à l’entrepôt (+${CREDITS.truck} crédits).`, 'good');
+    S.truck = null; for (const id of IDS) if (S.work[id] && S.work[id].kind === 'truck') S.work[id] = null;
+  } else if (tr.t <= 0) {
+    toast(S, 'all', 'Le camion est reparti sans être déchargé.', 'warn');
+    S.truck = null; for (const id of IDS) if (S.work[id] && S.work[id].kind === 'truck') S.work[id] = null;
   }
 }
 
@@ -1898,7 +2038,7 @@ function orders(S, dt) {
     S.orderT = 60 + Math.random() * 30;
     sfx(S, 'all', 'order');
     const o = S.orders[S.orders.length - 1];
-    toast(S, 'all', `Nouvelle commande${o.special ? ' spéciale' : ''} : ${orderText(o, 'want')}.`, 'info');
+    toast(S, 'all', `${o.urgent ? 'Commande URGENTE (3 min, prime double)' : 'Nouvelle commande' + (o.special ? ' spéciale' : '')} : ${orderText(o, 'want')}.`, o.urgent ? 'warn' : 'info');
   }
 }
 function newOrder(S) {
@@ -1912,7 +2052,10 @@ function newOrder(S) {
     if (Math.random() < 0.5) delete want.ouvrier;
   }
   const n = sum(want);
-  return { id: S.seq++, want, left: { ...want }, special, t: 300 + 60 * n, life: 300 + 60 * n, reward: 20 + 18 * (want.ouvrier || 0) + (special ? 45 : 0) };
+  const reward = 20 + 18 * (want.ouvrier || 0) + (special ? 45 : 0);
+  // Commande urgente (à partir du niveau 10) : 3 minutes au chrono, prime double
+  if (S.level >= 9 && Math.random() < 0.25) return { id: S.seq++, want, left: { ...want }, special, urgent: true, t: 180, life: 180, reward: reward * 2 };
+  return { id: S.seq++, want, left: { ...want }, special, t: 300 + 60 * n, life: 300 + 60 * n, reward };
 }
 
 // ---------- objectifs ----------
@@ -1989,6 +2132,7 @@ function waits(S) {
   for (const id of IDS) {
     const p = S.players[id], o = other(id);
     p.wait = null;
+    if (S.work[id] && S.work[id].kind === 'truck' && !(S.work[o] && S.work[o].kind === 'truck')) p.wait = 'Il faut être deux !';
     if (Object.values(S.parts).some((c) => !c.placed && c.hand[id] && !c.hand[o] && !c.hand.E && !c.eng)) p.wait = 'Il faut être deux !';
     for (const [pid, st] of Object.entries(S.plots)) {
       const engScrew = S.droids.some((x) => x.task && x.task.plot === pid && x.task.kind === 'screw' && dist(x, postR(PLOT_BY_ID[pid])) < 0.6);

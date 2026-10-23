@@ -1,5 +1,5 @@
 // Déplacements et collisions (cercles et boîtes), partagés par l'hôte et l'invité.
-import { WORLD, PLAYER_R, PLOTS, PART } from './config.js';
+import { WORLD, PLAYER_R, PLOTS, PART, TRUCK } from './config.js';
 import { STATIC_OBS, plotBox } from './world.js';
 
 export function obstacles(S) {
@@ -14,6 +14,8 @@ export function obstacles(S) {
     const c = S.parts[p.id];
     if (c && !c.placed && (p.level || 1) <= S.level + 1 && !(S.plots[p.id] && S.plots[p.id].built)) list.push({ x: c.x, z: c.z, w: PART.w, d: PART.d, core: true });
   }
+  // Camion de livraison garé devant les ruines
+  if (S.truck) { const along = Math.abs(S.truck.dx) > 0.5; list.push({ x: S.truck.x, z: S.truck.z, w: along ? TRUCK.w : TRUCK.d, d: along ? TRUCK.d : TRUCK.w }); }
   return list;
 }
 

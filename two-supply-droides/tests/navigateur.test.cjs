@@ -339,6 +339,27 @@ const assert = (c, m) => { if (!c) throw new Error('ÉCHEC : ' + m); console.log
     await sleep(800);
     await A.screenshot({ path: OUT + '17-commandes.png' });
   }
+
+  // ---------- 0.7 : amélioration au menu Recettes, camion, Colosse ----------
+  console.log('0.7');
+  {
+    await A.evaluate(async () => { const C = await import('./js/config.js'); const S = window.__ts.app.sim; S.orders = []; const p = C.PLOTS.find((x) => x.id === 'ceramique'); window.__ts.tp(p.x, p.z + C.MACHINES.ceramique.d / 2 + 0.8, Math.PI); });
+    assert(await until(A, () => document.getElementById('btn-ctx').textContent === 'Recettes'), 'bouton Recettes');
+    await A.click('#btn-ctx');
+    await until(A, () => document.getElementById('screen-recettes').classList.contains('active'));
+    assert(await until(A, () => /Améliorations/.test(document.getElementById('recettes-body').textContent)), 'bloc Améliorations dans le menu Recettes');
+    await A.screenshot({ path: OUT + '18-ameliorations.png' });
+    await A.click('#btn-recettes-close');
+    await A.evaluate(() => { const S = window.__ts.app.sim; S.truckT = 0.01; S.giantLvl = -1; S.giantT = 0.01; });
+    assert(await until(A, () => !!window.__ts.app.sim.truck && window.__ts.app.sim.animals.some((a) => a.sp === 'colosse')), 'un camion et un Colosse arrivent');
+    await A.evaluate(() => { const t = window.__ts.app.sim.truck; window.__ts.tp(t.x - t.dx * 6, t.z - t.dz * 6, Math.atan2(t.dx, t.dz)); });
+    assert(await until(A, () => /Camion de livraison/.test([...document.getElementById('labels').children].filter((e) => e.style.display !== 'none').map((e) => e.textContent).join(' '))), 'étiquette du camion');
+    await sleep(800);
+    await A.screenshot({ path: OUT + '19-camion.png' });
+    await A.evaluate(() => { const g = window.__ts.app.sim.animals.find((a) => a.sp === 'colosse'); window.__ts.tp(g.x - 5, g.z, Math.PI / 2); });
+    await sleep(1500);
+    await A.screenshot({ path: OUT + '20-colosse.png' });
+  }
   await ctx.close();
 
   // ---------- duo : grosse usine (messages découpés), coupure et reconnexion, appel ----------

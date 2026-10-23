@@ -217,7 +217,7 @@ function assignAt(d, id) {
   run(5);
 }
 function capture() {
-  const an = S.animals.filter((a) => a.st === 'wander' || a.st === 'flee').sort((a, b) => Math.hypot(a.x - A.x, a.z - A.z) - Math.hypot(b.x - A.x, b.z - A.z))[0];
+  const an = S.animals.filter((a) => (a.st === 'wander' || a.st === 'flee') && a.sp !== 'colosse').sort((a, b) => Math.hypot(a.x - A.x, a.z - A.z) - Math.hypot(b.x - A.x, b.z - A.z))[0];
   assert.ok(an, 'une créature à attraper');
   let caught = false;
   for (let i = 0; i < 30 * 120 && !caught; i++) {
@@ -322,7 +322,8 @@ function deliverOrder(special = false) {
   let want = '';
   // (les colis peuvent partir vers une commande plus ancienne : on recommence jusqu'à ce qu'une commande soit satisfaite)
   for (let round = 0; round < 4 && !done(); round++) {
-    let g = 0; while (!SIM.activeOrders(S).some((o) => !special || o.special) && g++ < 30 * 300) { fuel(); tick(); }
+    // (si les commandes ordinaires prennent toutes les places, on en satisfait une pour laisser venir une spéciale)
+    let g = 0; while (!SIM.activeOrders(S).some((o) => !special || o.special) && g++ < 30 * 400) { fuel(); tick(); if (special && g % (30 * 60) === 0 && SIM.activeOrders(S).length >= 2) deliverOrder(false); }
     const o = SIM.activeOrders(S).find((x) => !special || x.special);
     assert.ok(o, 'commande reçue' + (special ? ' (spéciale)' : ''));
     want = SIM.orderText(o, 'want');

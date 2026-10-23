@@ -5,9 +5,9 @@ import { NODES, height, PLOT_BY_ID } from './world.js';
 import { NODE_TYPES } from './config.js';
 import {
   buildGround, buildDecor, nodeModel, machineModel, plotModel, entrepotModel,
-  workerModel, droidModel, animalModel, itemPile, pauseModel, partModel, lampPostsModel, lampLights, skyModel,
+  workerModel, droidModel, animalModel, itemPile, pauseModel, partModel, lampPostsModel, lampLights, skyModel, truckModel,
 } from './models.js';
-import { postL, postR, plotUnlocked, pauseSpot } from './sim.js';
+import { postL, postR, plotUnlocked, pauseSpot, truckPost } from './sim.js';
 
 const YELLOW = [0.96, 0.75, 0.06];
 const FAR_DROID = 14;
@@ -32,6 +32,10 @@ export function buildScene(mode = 'duo') {
   root.add(S.sky);
   S.lamps = lampPostsModel();
   root.add(S.lamps);
+  S.truck = truckModel();
+  S.truck.visible = false; S.truck.cullR = 3.5;
+  root.add(S.truck);
+  for (const side of ['L', 'R']) { const r = duoRing(); r.visible = false; root.add(r); S.rings['truck' + side] = r; }
 
   NODES.forEach((n, i) => {
     const m = nodeModel(n);
@@ -304,6 +308,7 @@ export function updateScene(S, st, view) {
           s.mesh.mat.opacity = 0.42 * (1 - t);
         });
       }
+      a.stars.children.forEach((st, k) => { st.visible = k < (m.up || 0); st.rot[1] = view.time * 1.5; });
       a.sparks.visible = !!m.broken;
       if (m.broken) a.sparks.children.forEach((s, i) => {
         const t = (view.time * 1.8 + i * 0.37) % 1, ang = i * 1.9 + Math.floor(view.time * 1.8 + i * 0.37) * 2.1;
@@ -319,6 +324,25 @@ export function updateScene(S, st, view) {
         s.mesh.mat.opacity = 0.5 * (1 - t);
       });
     }
+  }
+
+  // Camion de livraison et ses deux postes (décharger, réceptionner)
+  const tr = st.truck;
+  S.truck.visible = !!tr;
+  if (tr) {
+    S.truck.pos = [tr.x, groundY(tr.x, tr.z), tr.z];
+    S.truck.rot[1] = Math.atan2(-tr.dz, tr.dx);
+    S.truck.load.visible = Object.values(tr.items).some((n) => n > 0);
+  }
+  for (const side of ['L', 'R']) {
+    const r = S.rings['truck' + side];
+    r.visible = !!tr;
+    if (!tr) continue;
+    const pt = truckPost(tr, side);
+    r.pos = [pt.x, groundY(pt.x, pt.z) + 0.04, pt.z];
+    const who = ['A', 'B'].find((id) => st.work[id] && st.work[id].kind === 'truck' && st.work[id].side === side) || null;
+    const near = ['A', 'B'].find((id) => Math.hypot(st.players[id].x - pt.x, st.players[id].z - pt.z) < POST_R);
+    paintRing(r, who, near);
   }
 
   // Pièces lourdes : visibles quand leur chantier est débloqué, soulevées quand on les porte
@@ -386,7 +410,7 @@ export function updateScene(S, st, view) {
   for (const a of st.animals) {
     seenA.add(a.id);
     let m = S.animals.get(a.id);
-    if (!m) { m = animalModel(a.sp); m.cullR = 2.6; S.root.add(m); S.animals.set(a.id, m); S.targets['animal' + a.id] = m; }
+    if (!m) { m = animalModel(a.sp); m.cullR = a.sp === 'colosse' ? 5 : 2.6; S.root.add(m); S.animals.set(a.id, m); S.targets['animal' + a.id] = m; }
     let x = a.x, z = a.z, rot = a.rot;
     if (a.st === 'installed' && a.mach) {
       const p = PLOTS.find((q) => q.id === a.mach), mw = MACHINES[p.type].w;
