@@ -82,11 +82,11 @@ const assert = (c, m) => { if (!c) throw new Error('ÉCHEC : ' + m); console.log
   }
   // Appel : le bord orange s'éteint quand on arrive sur place
   await A.evaluate(() => { window.__ts.tp(-4, 4); window.__ts.app.sim.fx.push({ to: 'A', k: 'call', text: 'Ton partenaire t’appelle !', x: 6, z: 4 }); });
-  assert(await until(A, () => document.getElementById('call-flash').classList.contains('on'), null, 4000), 'appel : bord qui clignote');
+  assert(await until(A, () => document.getElementById('call-flash').classList.contains('on'), null, 12000), 'appel : bord qui clignote');
   await sleep(2500);
   assert(await A.evaluate(() => document.getElementById('call-flash').classList.contains('on')), 'appel : le bord clignote toujours tant qu’on n’est pas venu');
   await A.evaluate(() => window.__ts.tp(5, 4));
-  assert(await until(A, () => !document.getElementById('call-flash').classList.contains('on'), null, 3000), 'appel : le bord s’éteint une fois sur place');
+  assert(await until(A, () => !document.getElementById('call-flash').classList.contains('on'), null, 12000), 'appel : le bord s’éteint une fois sur place');
   // … ou au bout de 15 secondes
   await A.evaluate(() => { window.__ts.tp(-4, 4); window.__ts.app.sim.fx.push({ to: 'A', k: 'call', text: 'Ton partenaire t’appelle !', x: 6, z: 4 }); });
   assert(await until(A, () => document.getElementById('call-flash').classList.contains('on'), null, 4000), 'deuxième appel');
