@@ -57,40 +57,40 @@ const setup = (mode, nEng) => {
   for (const d of S.droids) if (d.type === 'ingenieur') { d.type = 'logistique'; }
   const free = S.droids.filter((d) => d.type === 'ouvrier' && d.st === 'idle');
   for (let k = 0; k < nEng; k++) { const d = free[k] || S.droids.find((x) => x.type === 'ouvrier'); d.type = 'ingenieur'; d.st = 'work'; d.job = 'hq'; d.task = null; }
-  // matériaux de l'emballeuse à l'entrepôt
-  for (const [k, n] of Object.entries(MACHINES.emballeuse.cost)) S.stock[k] = (S.stock[k] || 0) + n + 2;
+  // matériaux du four à l'entrepôt
+  for (const [k, n] of Object.entries(MACHINES.four.cost)) S.stock[k] = (S.stock[k] || 0) + n + 2;
   return S;
 };
 {
   // a. un seul ingénieur : il livre et tient la pièce, mais ne monte pas seul ; il faut un joueur pour visser
   const S = setup('solo', 1);
-  const c = S.parts.emballeuse, st = S.plots.emballeuse;
-  assert.ok(!c.placed && SIM.partOut(S, 'emballeuse'), 'pièce lourde dans le terrain vague');
-  SIM.debugPlacePart(S, 'emballeuse');
+  const c = S.parts.four, st = S.plots.four;
+  assert.ok(!c.placed && SIM.partOut(S, 'four'), 'pièce lourde dans le terrain vague');
+  SIM.debugPlacePart(S, 'four');
   // il livre, puis tient la pièce et appelle les joueurs (au bout de 45 s sans personne, il retourne à ses autres tâches)
   let g = 0; while (!String(st.holder).startsWith('E') && g++ < 30 * 60) run(S, 1 / 30 * 30);
   run(S, 5);
   assert.ok(st.ready && !st.built, 'un ingénieur seul ne monte pas la machine');
   assert.ok(String(st.holder).startsWith('E'), 'l’ingénieur tient la pièce à gauche : ' + st.holder);
-  const pr = SIM.postR(PLOT_BY_ID.emballeuse);
+  const pr = SIM.postR(PLOT_BY_ID.four);
   const A = { x: pr.x, z: pr.z, events: [] };
   for (let k = 0; k < 40 && !st.built; k++) { A.events = ['down']; step(S, A); A.events = ['up']; step(S, A); }
   assert.ok(st.built, 'un joueur visse pendant que l’ingénieur tient : machine montée');
-  console.log('un ingénieur + un joueur : emballeuse montée');
+  console.log('un ingénieur + un joueur : four à verre monté');
 }
 {
   // b. deux ingénieurs : ils vont chercher la pièce lourde, livrent et montent seuls
   const S = setup('solo', 2);
-  const c = S.parts.emballeuse, t0 = S.time;
-  let g = 0; while (!S.plots.emballeuse.built && g++ < 30 * 400) run(S, 1 / 30 * 30);
+  const c = S.parts.four, t0 = S.time;
+  let g = 0; while (!S.plots.four.built && g++ < 30 * 400) run(S, 1 / 30 * 30);
   assert.ok(c.placed, 'pièce ramenée par les deux ingénieurs');
-  assert.ok(S.plots.emballeuse.built, 'machine montée par les deux ingénieurs');
-  console.log('deux ingénieurs : pièce ramenée et emballeuse montée en', Math.round(S.time - t0), 's');
+  assert.ok(S.plots.four.built, 'machine montée par les deux ingénieurs');
+  console.log('deux ingénieurs : pièce ramenée et four à verre monté en', Math.round(S.time - t0), 's');
 }
 {
   // c. à deux téléphones : un joueur tient seul une pièce, le partenaire est loin → un ingénieur vient prendre l'autre poignée
   const S = setup('duo', 1);
-  const c = S.parts.emballeuse;
+  const c = S.parts.four;
   const A = { x: c.x - PART.handle - 0.2, z: c.z, events: [], mx: 0, mz: 0 };
   step(S, A);
   assert.match(label(S), /^Saisir/, label(S));
@@ -106,7 +106,7 @@ const setup = (mode, nEng) => {
 {
   // d. le partenaire prend une poignée, les deux joueurs portent ; pièce posée sur son chantier
   const S = setup('duo', 0);
-  const c = S.parts.emballeuse, target = PLOT_BY_ID.emballeuse;
+  const c = S.parts.four, target = PLOT_BY_ID.four;
   c.x = target.x; c.z = target.z - 2.9; // tout près, dans l'allée devant le chantier (pour le test)
   const A = { x: c.x - PART.handle - 0.2, z: c.z, events: ['down'], mx: 0, mz: 0 }, B = { x: c.x + PART.handle + 0.2, z: c.z, events: ['down'], mx: 0, mz: 0 };
   step(S, A, B); A.events = []; B.events = [];

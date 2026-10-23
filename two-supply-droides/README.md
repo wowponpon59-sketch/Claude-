@@ -1,10 +1,18 @@
-# Two Supply — Droïdes (version 0.5)
+# Two Supply — Droïdes (version 0.6)
 
 Usine de droïdes dans un terrain vague, en 20 niveaux, en solo (avec un coéquipier IA) ou à deux téléphones.
 
 **Jouer :** `https://wowponpon59-sketch.github.io/Claude-/two-supply-droides/`
 
 Les versions 0.2 et 0.3 restent dans l’historique Git. La version 0.1 (pain) est dans `two-supply/`.
+
+## Nouveautés de la 0.6
+
+- **Vous êtes les directeurs** : des clients passent des commandes au hasard (droïdes standards, puis à partir du niveau 10 des commandes ★ spéciales qui demandent un droïde spécialisé). Elles s’affichent en haut à gauche avec le temps qui reste.
+- **Emballage** dès le niveau 8 (emballeuse et quai) : on amène un droïde à l’emballeuse, avec un carton il en sort en colis, qu’on livre au quai. La recette « Emballer un droïde standard » le fait toute seule avec les droïdes standards libres. Pour une commande spéciale, le bouton « Faire venir » à l’emballeuse appelle le droïde demandé. L’ancien « droïde en caisse » disparaît (les caisses des sauvegardes deviennent des colis).
+- **Objectifs** : « Satisfaire X commandes » aux niveaux 8, 10, 15, 18, 19 et 20, et une commande spéciale au niveau 18. « Recycler 2 objets en trop » passe au niveau 11.
+- **3 droïdes au plus par métier** (les droïdes standards ne sont pas limités).
+- **Durée de vie** : 3 niveaux après sa fabrication, un droïde devient obsolète. Il travaille à 60 % ; amené au recycleur, il rend une carcasse et un circuit (et libère sa place dans le métier).
 
 ## Nouveautés de la 0.5
 
@@ -88,4 +96,4 @@ Deux onglets sur le même ordinateur : ajouter `?net=fake` à l’adresse.
 
 ## Tests
 
-Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3 et de la 0.5, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.
+Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3, de la 0.5 et de la 0.6, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.

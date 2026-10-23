@@ -81,7 +81,11 @@ function carryPart(id) {
   if (!c || c.placed) return;
   // Les ingénieurs (à deux) sont déjà en train de la ramener : on les laisse faire
   const engOn = () => c.eng || S.droids.some((d) => d.task && d.task.part === id);
-  if (engOn()) { let w = 0; while (!c.placed && w++ < 30 * 150) { fuel(); tick(); } assert.ok(c.placed, 'pièce ramenée par les ingénieurs : ' + id); log('pièce lourde ramenée par les ingénieurs :', id); return; }
+  if (engOn()) {
+    let w = 0; while (!c.placed && engOn() && w++ < 30 * 150) { fuel(); tick(); if (process.env.DBGP && w % 90 === 0) console.log('DBGP', id, c.x.toFixed(1), c.z.toFixed(1), JSON.stringify(c.eng), c.stuckT, c.ghostT, JSON.stringify(S.droids.filter((d) => d.task && d.task.part === id).map((d) => [d.id, d.x.toFixed(1), d.z.toFixed(1), d.task.kind, d.task.side, d.st]))); }
+    if (c.placed) { log('pièce lourde ramenée par les ingénieurs :', id); return; }
+    // les ingénieurs ont été appelés ailleurs : le joueur la ramène avec le coéquipier
+  }
   at(c.x - PART.handle - 0.3, c.z);
   assert.match(label(), /^Saisir/, 'poignée ' + id + ' : ' + label());
   tap();
@@ -143,6 +147,7 @@ function operate(id, until, max = 120) {
 }
 function collect(id) {
   const m = S.machines[id];
+  if (m.broken) fix(id);
   const f = frontOf(id); at(f.x, f.z);
   if (Object.keys(m.out).length) { assert.match(label(), /Récupérer|Affecter|Reprendre|Installer/, label()); if (/Récupérer/.test(label())) tap(); }
   deposit();
@@ -175,7 +180,8 @@ function newDroid() {
 }
 function take(d) {
   // on vise ce droïde-là (pas un autre qui passe à côté)
-  for (let k = 0; k < 12 && d.st !== 'follow'; k++) { at(d.x + 0.6, d.z); if (/Emmener|Reprendre/.test(label()) && (S.players.A.hint || {}).key === 'droid' + d.id) tap(); else run(0.3); }
+  const OFF = [[0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6], [0.45, 0.45], [-0.45, -0.45]];
+  for (let k = 0; k < 18 && d.st !== 'follow'; k++) { const [ox, oz] = OFF[k % OFF.length]; at(d.x + ox, d.z + oz); if (/Emmener|Reprendre/.test(label()) && (S.players.A.hint || {}).key === 'droid' + d.id) tap(); else run(0.3); }
   assert.equal(d.st, 'follow', 'emmener : ' + label());
 }
 const KIT = Object.fromEntries(Object.entries(DROIDS).filter(([, d]) => d.kit).map(([k, d]) => [k, d.kit]));
@@ -204,6 +210,7 @@ function train(type) {
   return d;
 }
 function assignAt(d, id) {
+  if (S.machines[id] && S.machines[id].broken) fix(id);
   if (d.st !== 'follow') take(d);
   const f = frontOf(id); at(f.x + 0.4, f.z); run(1.5);
   assert.match(label(), /Affecter/, 'affecter ' + id + ': ' + label()); tap();
@@ -225,9 +232,13 @@ function capture() {
   }
   assert.ok(caught, 'créature capturée avec le coéquipier');
   const got = S.animals.find((a) => a.st === 'caught' && a.by === 'A');
-  const m = Object.values(S.machines).find((x) => MACHINES[x.type].recipes.length && x.animals.length < T.animalMax && !x.broken);
-  const f = frontOf(m.id); at(f.x - 0.8, f.z); run(2.5);
-  if (/^Installer/.test(label())) tap();
+  // (une machine peut tomber en panne au mauvais moment : on en essaie une autre)
+  for (let k = 0; k < 5 && got.st !== 'installed'; k++) {
+    const m = Object.values(S.machines).filter((x) => MACHINES[x.type].recipes.length && x.animals.length < T.animalMax && !x.broken)[k];
+    if (!m) break;
+    const f = frontOf(m.id); at(f.x - 0.8, f.z); run(2.5);
+    if (/^Installer/.test(label())) tap();
+  }
   assert.equal(got.st, 'installed', 'créature installée : ' + label());
 }
 // Joue les objectifs de rodage (et les objectifs chiffrés) jusqu'à les réussir
@@ -260,30 +271,72 @@ function satisfy() {
       else if (kind === 'recyc+') { if (!S.machines.recycleur.sel.includes('recyc')) setRecipes('recycleur', [...S.machines.recycleur.sel, 'recyc']); feed('recycleur', { carcasse_r: 1, circuit_r: 1 }); operate('recycleur', () => prog() >= n, 60); collect('recycleur'); }
       else if (kind === 'surplus+') { const f = frontOf('recycleur'); at(f.x, f.z); cmd({ c: 'trash', mach: 'recycleur', item: 'isolant', on: true }); feed('recycleur', { isolant: n }); operate('recycleur', () => prog() >= n, 60); collect('recycleur'); cmd({ c: 'trash', mach: 'recycleur', item: 'isolant', on: false }); }
       else if (kind === 'orders+') deliverOrder();
-      else if (kind === 'spec+') train(['maintenance', 'logistique'][guard % 2]);
+      else if (kind === 'special+') deliverOrder(true);
+      else if (kind === 'spec+') {
+        // un métier débloqué qui n'a pas encore 3 droïdes
+        const t = ['maintenance', 'logistique', 'recherche', 'chefmaint', 'ingenieur', 'expert'].find((x) => DROIDS[x].lvl <= S.level && SIM.typeCount(S, x) < 3);
+        assert.ok(t, 'un métier à former'); train(t);
+      }
       tick();
     }
     assert.ok(S.goals[g.id] || prog() >= n, `objectif ${g.id} (${prog()}/${n})`);
   }
 }
-function deliverOrder() {
-  let g = 0; while (!SIM.activeOrders(S).length && g++ < 30 * 120) tick();
-  const o = SIM.activeOrders(S)[0];
-  assert.ok(o, 'commande reçue');
-  const o0 = S.stats.orders, need = o.left;
-  // les caisses et cartons sont fournis : on teste l'emballage, le transport et la livraison
-  if (S.machines.emballeuse.sel.join() !== 'colis') setRecipes('emballeuse', ['colis']);
-  feed('emballeuse', { caisse: need, carton: need });
-  const c0 = S.stats.made.colis || 0;
-  operate('emballeuse', () => (S.stats.made.colis || 0) >= c0 + need || S.stats.orders > o0, 90);
-  g = 0; while (S.stats.orders === o0 && g++ < 30 * 20) tick(); // l'expert peut livrer tout seul
-  if (S.stats.orders === o0) {
-    collect('emballeuse');
-    atHQ(); cmd({ c: 'take', item: 'colis', n: need });
-    const q = frontOf('quai'); at(q.x, q.z);
-    if (SIM.activeOrders(S).length && (S.players.A.sac.colis || 0)) { assert.match(label(), /Livrer/, label()); tap(); }
+// Commande : emballer les droïdes demandés (un droïde qui suit le joueur + un carton) et livrer les colis au quai
+function packOne(t) {
+  const emb = S.machines.emballeuse;
+  if (!emb.operator) { const op = S.droids.find((x) => x.type === 'ouvrier' && x.st === 'idle') || newDroid(); assignAt(op, 'emballeuse'); }
+  emb.inp.carton = (emb.inp.carton || 0) + 1;
+  const k = 'colis_' + t, n0 = S.stats.made[k] || 0;
+  const f = frontOf('emballeuse');
+  if (t === 'ouvrier') {
+    // droïde standard : il suit le joueur jusqu'à l'emballeuse
+    const d = S.droids.find((x) => x.type === 'ouvrier' && x.st === 'idle') || newDroid();
+    take(d);
+    for (let k = 0; k < 3 && !/Emballer/.test(label()); k++) { if (S.machines.emballeuse.broken) fix('emballeuse'); at(f.x, f.z); run(1.2); }
+    assert.match(label(), /Emballer/, 'emballeuse : ' + label());
+    tap();
+  } else {
+    // droïde spécialisé demandé par la commande : « Faire venir » depuis l'emballeuse
+    if (!S.droids.some((x) => x.type === t && x.st !== 'spec')) train(t);
+    if (Object.keys(S.machines.emballeuse.out).length) collect('emballeuse');
+    if (S.machines.emballeuse.broken) fix('emballeuse');
+    // (« Faire venir » propose d'abord le premier métier attendu par les commandes : on recommence si besoin)
+    for (let tries = 0; tries < 4 && (S.stats.made[k] || 0) === n0; tries++) {
+      if (!S.droids.some((x) => x.type === t && x.st !== 'spec' && x.st !== 'pack')) train(t);
+      if (Object.keys(S.machines.emballeuse.out).length) collect('emballeuse');
+      if (!(S.machines.emballeuse.inp.carton > 0)) S.machines.emballeuse.inp.carton = 1;
+      if (S.machines.emballeuse.broken) fix('emballeuse');
+      at(f.x, f.z); run(0.5);
+      // (la commande a pu expirer entre-temps : deliverOrder recommencera avec la suivante)
+      if (!/Faire venir|Emballer/.test(label())) return;
+      tap();
+      let g = 0; while (S.droids.some((x) => x.st === 'pack') && g++ < 30 * 60) tick();
+    }
   }
-  log('commandes livrées :', S.stats.orders, '· crédits', S.credits);
+  assert.equal(S.stats.made[k], n0 + 1, 'colis emballé : ' + t);
+}
+function deliverOrder(special = false) {
+  const o0 = S.stats.orders, s0 = S.stats.special || 0;
+  const done = () => (special ? (S.stats.special || 0) > s0 : S.stats.orders > o0);
+  let want = '';
+  // (les colis peuvent partir vers une commande plus ancienne : on recommence jusqu'à ce qu'une commande soit satisfaite)
+  for (let round = 0; round < 4 && !done(); round++) {
+    let g = 0; while (!SIM.activeOrders(S).some((o) => !special || o.special) && g++ < 30 * 300) { fuel(); tick(); }
+    const o = SIM.activeOrders(S).find((x) => !special || x.special);
+    assert.ok(o, 'commande reçue' + (special ? ' (spéciale)' : ''));
+    want = SIM.orderText(o, 'want');
+    for (const [t, n] of Object.entries(o.left)) for (let k = 0; k < n; k++) packOne(t);
+    g = 0; while (!done() && g++ < 30 * 20) tick(); // l'expert peut livrer tout seul
+    if (done()) break;
+    collect('emballeuse');
+    atHQ();
+    for (const k of Object.keys(S.stock)) if (k.startsWith('colis_')) cmd({ c: 'take', item: k, n: S.stock[k] });
+    const q = frontOf('quai'); at(q.x, q.z);
+    if (/Livrer/.test(label())) tap();
+  }
+  assert.ok(done(), 'commande satisfaite : ' + want);
+  log('commande satisfaite :', want, '· total', S.stats.orders, '· crédits', S.credits);
 }
 const earnedAt = {};
 function waitLevel(n, max = 30) {
@@ -418,6 +471,10 @@ waitLevel(8);
 // ========== NIVEAU 8 (rodage) : nouvelles recettes de circuit ==========
 assert.ok(SIM.machineRecipes(S, S.machines.circuits).includes('circuitF') && SIM.machineRecipes(S, S.machines.circuits).includes('circuitC'), 'recettes de circuit au cuivre et sur céramique');
 make('circuits', 'circuitC', 2); collect('circuits');
+// premières commandes : emballeuse et quai dès le niveau 8
+assert.equal(LEVELS[S.level].name, 'Premières commandes');
+add('plastique', 4); add('bois', 4);
+buildPlot('emballeuse'); buildPlot('quai');
 satisfy();
 waitLevel(9);
 
@@ -495,7 +552,7 @@ buildPlot('forge2'); buildPlot('circuits2');
   assert.equal(S.stats.made.circuit || 0, made0, 'stock plein : la machine ne produit plus');
   assert.match(SIM.waitWhy(S, ci), /Stock plein \(20\)/, 'message stock plein : ' + SIM.waitWhy(S, ci));
   S.stock.circuit = 15;
-  g = 0; while ((S.stats.made.circuit || 0) === made0 && g++ < 30 * 40) { fuel(); tick(); }
+  g = 0; while ((S.stats.made.circuit || 0) === made0 && g++ < 30 * 80) { fuel(); if (ci.broken) fix('circuits'); tick(); }
   assert.ok((S.stats.made.circuit || 0) > made0, 'le stock baisse : la machine repart');
   // kits : 3 au maximum
   S.stock.k_outils = 3;
@@ -540,7 +597,9 @@ const d0 = Object.keys(S.stats.made).filter((k) => k.endsWith('_d')).reduce((a, 
 const declN = () => Object.keys(S.stats.made).filter((k) => k.endsWith('_d')).reduce((a, k) => a + S.stats.made[k], 0);
 S.stock.circuit = Math.min(S.stock.circuit || 0, 4);
 for (const m of Object.values(S.machines)) delete m.out.circuit;
+T.stockCap = 99; // (le test veut des déclassés : pas de pause « stock plein » ici)
 for (let k = 0; k < 4 && declN() === d0; k++) { make('circuits', 'circuit', 12); collect('circuits'); }
+T.stockCap = 20;
 const d1 = declN();
 log('déclassées sur 12 circuits :', d1 - d0);
 assert.ok(d1 > d0, 'des pièces sortent déclassées');
@@ -548,7 +607,8 @@ assert.ok(d1 > d0, 'des pièces sortent déclassées');
 const z = S.machines.zone;
 // (les déclassés d'autres machines arrivent dans la zone avec les droïdes logistiques)
 for (let k = 0; k < 90 && !(Object.keys(z.inp).length > 0 || (S.stats.made.circuit_d || 0) > 0); k++) run(1);
-assert.ok(Object.keys(z.inp).length > 0 || (S.stats.made.circuit_d || 0) > 0, 'déclassés rangés dans la zone');
+const declIn = (box) => Object.keys(box).some((k) => ITEMS[k].kind === 'decl');
+assert.ok(declIn(z.inp) || declIn(S.machines.qualite.inp) || S.stats.controlled > 0 || (S.stats.made.circuit_d || 0) > 0, 'déclassés rangés dans la zone (ou déjà au contrôle)');
 z.inp.circuit_d = (z.inp.circuit_d || 0) + 2;
 f = frontOf('zone'); at(f.x, f.z); cmd({ c: 'ztake', item: 'circuit_d', n: 2 });
 assert.ok((S.players.A.sac.circuit_d || 0) >= 2, 'déclassés pris dans la zone');
@@ -597,7 +657,6 @@ if (lvl() === 17) satisfy();
 waitLevel(18);
 
 // ========== NIVEAU 18 : expédition ==========
-buildPlot('emballeuse'); buildPlot('quai');
 add('plastique', 4);
 train('achat');
 satisfy();

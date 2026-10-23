@@ -1,10 +1,10 @@
 // Interface : écrans, HUD, menus, commandes tactiles, caméra et repères au-dessus des objets.
 import {
   ITEMS, ITEM_ORDER, RAW, RAW_LEVEL, SAC_MAX, NODE_TYPES, MACHINES, PLOTS, ENTREPOT, PART, HEAVY, DROIDS, SPEC_ORDER,
-  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, ME_SLOTS, ME_OUTFITS, ME_COLORS, QC_BASES, LABEL_RANGE, ANIMAL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, other,
+  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, ME_SLOTS, ME_OUTFITS, ME_COLORS, QC_BASES, MAX_PER_TYPE, LABEL_RANGE, ANIMAL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, other,
 } from './config.js';
 import { NODES, height, PLOT_BY_ID, plotBox } from './world.js';
-import { postL, postR, plotUnlocked, partOut, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, genText, apart, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
+import { postL, postR, plotUnlocked, partOut, typeCount, ordersNeed, orderText, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, genText, apart, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
 import { boxDist } from './move.js';
 
 const $ = (id) => document.getElementById(id);
@@ -51,6 +51,8 @@ export function itemIcon(k) {
     inner = `<rect x="3" y="7" width="18" height="13" rx="2.5" fill="${def.css}" stroke="#15171a" stroke-width=".8"/><path d="M9 7V5h6v2" stroke="${def.css}" stroke-width="2" fill="none"/><text x="12" y="17.2" text-anchor="middle" font-size="8.5" font-weight="800" font-family="Barlow, sans-serif" fill="${k === 'k_lecteur' || k === 'k_planning' ? '#15171a' : '#fff'}">${def.glyph}</text>`;
   } else if (def.kind === 'decl') {
     inner = `<g opacity=".75">${SHAPES[def.base](def.css)}</g>` + QBADGE;
+  } else if (def.kind === 'colis') {
+    inner = SHAPES.colis('#d9b27a') + `<rect x="3" y="15.5" width="18" height="3" fill="${def.css}"/>`;
   } else if (def.kind === 'rebut') {
     inner = `<g opacity=".55" filter="grayscale(1)">${SHAPES[def.base]('#7d8288')}</g>` + RBADGE;
   } else {
@@ -106,6 +108,10 @@ export function updateHud(st, myId, extra) {
   $('credits').textContent = `${st.credits} crédits`;
   $('btn-vest').classList.toggle('dot', canBuy(st));
 
+  // Commandes des clients : ce qu'il faut emballer et livrer au quai, et le temps qui reste
+  const od = $('orders'), act = st.machines.quai ? activeOrders(st) : [];
+  od.hidden = !act.length;
+  if (act.length) setHtml(od, act.slice(0, 3).map((o) => `<div class="ord ${o.special ? 'sp' : ''} ${o.t < 60 ? 'late' : ''}"><span>${o.special ? '★ ' : '📦 '}${orderText(o)}</span><span>${clock(o.t)}</span></div>`).join(''));
   const pw = $('power');
   if (needPower(st)) {
     const gen = st.machines.generateur;
@@ -288,8 +294,9 @@ export function fillSpec(st, myId, onPick) {
   const html = SPEC_ORDER.map((type) => {
     const d = DROIDS[type];
     if (d.lvl > st.level) return lockedCard(d.lvl);
-    const ok = have(d.kit) >= 1;
-    const note = ok ? '' : '<em>Kit à fabriquer à l’établi des kits</em>';
+    const n = typeCount(st, type), full = n >= MAX_PER_TYPE;
+    const ok = have(d.kit) >= 1 && !full;
+    const note = full ? `<em>${MAX_PER_TYPE} sur ${MAX_PER_TYPE} : c’est le maximum (recycle un droïde obsolète pour libérer une place)</em>` : have(d.kit) >= 1 ? `<em>${n} sur ${MAX_PER_TYPE} dans l’usine</em>` : '<em>Kit à fabriquer à l’établi des kits</em>';
     return `<button class="spec-card" data-type="${type}" ${ok ? '' : 'disabled'} style="--c:${d.css}"><b>${d.name}</b><span class="muted">${d.desc}</span><span class="kit">${itemIcon(d.kit)} ${ITEMS[d.kit].name} · ${have(d.kit)} dispo</span>${note}</button>`;
   }).join('');
   if (body.dataset.sig === html) return;
@@ -322,8 +329,8 @@ export function fillUsine(st, tab, send, myId = 'A') {
       const d = DROIDS[id];
       const lvl = d.lvl ?? 0;
       if (lvl > st.level) return lockedCard(lvl, 'org-card');
-      const cnt = n(id);
-      return `<div class="org-card" style="--c:${d.css}"><b>${d.name}</b><span>${d.kit ? ITEMS[d.kit].name : 'Droïde standard'}</span><em>${cnt ? cnt + ' dans l’usine' : 'Disponible'}</em></div>`;
+      const cnt = n(id), old = st.droids.filter((x) => x.type === id && x.old).length;
+      return `<div class="org-card" style="--c:${d.css}"><b>${d.name}</b><span>${d.kit ? ITEMS[d.kit].name : 'Droïde standard'}</span><em>${cnt ? cnt + (id === 'ouvrier' ? '' : ' / ' + MAX_PER_TYPE) + ' dans l’usine' + (old ? ` · ${old} obsolète${old > 1 ? 's' : ''}` : '') : 'Disponible'}</em></div>`;
     };
     const rows = [['chef'], ['adjoint'], ['process', 'ingenieur', 'chefmaint', 'expert'], ['production', 'qualite', 'adjq', 'logistique'], ['maintenance', 'recherche', 'achat'], ['ouvrier']];
     html += '<p class="muted">Vos droïdes sont vos employés. Chaque poste se forme à l’atelier de spécialisation, à partir d’un droïde standard et d’un kit fabriqué dans vos machines.</p><div class="org">';
@@ -684,6 +691,7 @@ export function objectiveSpot(st) {
   if (kind === 'item+') return at(ITEM_PLOT[item]);
   if (kind === 'ctrl+') return at('qualite');
   if (kind === 'recyc+' || kind === 'surplus+') return at('recycleur');
+  if (kind === 'special+') return at('quai');
   if (kind === 'spec+') return at('atelier');
   if (kind === 'orders+') return at('quai');
   return null;
@@ -745,7 +753,7 @@ export function worldLabels(st, myId, me) {
       html += sub(hot ? '<b class="bad">Surchauffe : il refroidit</b>' : `${itemIcon('charbon')}${genFill(st, m, 'charbon')}/${T.genCap} ${itemIcon('bois')}${genFill(st, m, 'bois')}/${T.genCap}` + (m.run ? ' · en marche' : ''));
     }
     else if (m.type === 'zone') html += sub(listItems(m.inp) || 'Vide : déposez ici les pièces déclassées');
-    else if (m.type === 'quai') { const o = activeOrders(st); html += sub(o.length ? o.map((x) => `${itemIcon('colis')}${x.left} · ${clock(x.t)}`).join(' &nbsp; ') : 'Pas de commande'); }
+    else if (m.type === 'quai') { const o = activeOrders(st); html += o.length ? o.map((x) => sub(`${x.special ? '★ ' : ''}${orderText(x)} · ${clock(x.t)}`)).join('') : sub('Pas de commande'); }
     else if (m.type === 'atelier') html += sub(m.busy ? 'Formation en cours…' : 'Amène un droïde standard');
     else if (!m.sel.length) html += sub('Aucune recette : bouton Recettes');
     else {
@@ -796,7 +804,7 @@ export function worldLabels(st, myId, me) {
     const dd = Math.hypot(d.x - me.x, d.z - me.z);
     if (d.st === 'spec' || dd > (d.st === 'idle' || d.st === 'follow' ? 4.5 : 2.6)) continue;
     const def = DROIDS[d.type];
-    const what = d.st === 'idle' ? ' · libre' : d.st === 'follow' ? ' · te suit' : d.pose ? ' · en pause' : '';
+    const what = (d.old ? ' · obsolète' : '') + (d.st === 'idle' ? ' · libre' : d.st === 'follow' ? ' · te suit' : d.pose ? ' · en pause' : '');
     add('d' + d.id, d.x, height(d.x, d.z) + (d.pose === 'sit' ? 1.3 : 1.55), d.z, `<div class="dtag" style="--c:${def.css}">${def.name}${what}</div>`);
   }
 

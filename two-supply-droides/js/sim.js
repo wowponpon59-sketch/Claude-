@@ -1,8 +1,8 @@
 // Simulation de référence (téléphone hôte, ou le seul téléphone en solo).
 import {
   REACH, POST_R, SAC_MAX, CARRY_SPEED, OUT_MAX, T, SCREWS, ITEMS, NODE_TYPES, MACHINES, PLOTS, ENTREPOT,
-  START, CORE, PART, HEAVY, needsPart, DROIDS, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_BASES, RAW, RAW_LEVEL, OUTFITS, PACK, CREDITS,
-  SLAB, WORLD, PAUSE, ME_OUTFITS, ME_COLORS, ME_DEFAULT_COL, RAW_CONTENT, RECYCLABLE, isRaw, isDecl, isRebut, other,
+  START, CORE, PART, HEAVY, needsPart, DROIDS, SPEC_ORDER, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_BASES, RAW, RAW_LEVEL, OUTFITS, PACK, CREDITS,
+  SLAB, WORLD, PAUSE, MAX_PER_TYPE, ME_OUTFITS, ME_COLORS, ME_DEFAULT_COL, RAW_CONTENT, RECYCLABLE, isRaw, isDecl, isRebut, other,
 } from './config.js';
 import { NODES, ANIMAL_HOMES, PLOT_BY_ID, plotBox, genWorld, slabDist, GATES, applyLayout, placeWhy, PART_SPOTS } from './world.js';
 import { boxDist, obstacles, moveBox, steer } from './move.js';
@@ -25,7 +25,7 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
     droids: [], animals: [],
     work: { A: null, B: null },
     seq: 1, made: 0, animalT: 0,
-    stats: { made: {}, controlled: 0, recycled: 0, surplus: 0, orders: 0, heavyFixed: 0, burned: 0, repairs: 0, earned: 0, spec: 0 },
+    stats: { made: {}, controlled: 0, recycled: 0, surplus: 0, orders: 0, special: 0, heavyFixed: 0, burned: 0, repairs: 0, earned: 0, spec: 0 },
     lv0: null,
     power: { battery: 0, energy: 0, out: false, warned: false },
     gen: { play: 0, lockUntil: 0 },
@@ -46,7 +46,7 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
 
 // Compteurs au début du niveau : les objectifs de rodage comptent ce qui se passe pendant le niveau
 function snapshot(S) {
-  return { made: S.made, earned: S.stats.earned, repairs: S.stats.repairs, ctrl: S.stats.controlled, recyc: S.stats.recycled, surplus: S.stats.surplus || 0, orders: S.stats.orders, spec: S.stats.spec || 0, items: { ...S.stats.made } };
+  return { made: S.made, earned: S.stats.earned, repairs: S.stats.repairs, ctrl: S.stats.controlled, recyc: S.stats.recycled, surplus: S.stats.surplus || 0, orders: S.stats.orders, special: S.stats.special || 0, spec: S.stats.spec || 0, items: { ...S.stats.made } };
 }
 const nowMs = (S) => S.clock || Date.now();
 
@@ -97,6 +97,14 @@ export function restoreState(S) {
   if (S.lv0.surplus === undefined) S.lv0.surplus = S.stats.surplus;
   S.stats.spec = S.stats.spec || 0;
   S.wardrobe.me = S.wardrobe.me || { A: newLook(), B: newLook() };
+  // 0.6 : colis par métier, commandes détaillées, âge des droïdes
+  S.stats.special = S.stats.special || 0;
+  if (S.lv0.special === undefined) S.lv0.special = S.stats.special;
+  const conv = (box) => { for (const k of ['caisse', 'colis']) if (box[k] > 0) { box.colis_ouvrier = (box.colis_ouvrier || 0) + box[k]; delete box[k]; } };
+  conv(S.stock); for (const m of Object.values(S.machines)) { conv(m.inp); conv(m.out); }
+  for (const p of Object.values(S.players)) conv(p.sac);
+  S.orders = (S.orders || []).filter((o) => o.want);
+  for (const d of S.droids) if (d.lv === undefined) d.lv = S.level;
   if (S.lv0.spec === undefined) S.lv0.spec = S.stats.spec;
   // 0.4.3 : déclassés et rebuts restent à part, dans la zone des déclassés
   const z = S.machines.zone;
@@ -232,6 +240,7 @@ function canMake(S, m, rid) {
   if (!Object.entries(r.in).every(([k, n]) => (m.inp[k] || 0) >= n)) return false;
   for (const k of Object.keys(r.out)) if (k !== 'droide' && (m.out[k] || 0) >= OUT_MAX) return false;
   if (recipeCapped(S, rid)) return false;
+  if (r.droid && !S.droids.some((d) => d.type === r.droid && d.st === 'idle')) return false;
   return true;
 }
 function pickRecipe(S, m) {
@@ -258,6 +267,9 @@ export function cadence(m, S) {
     const proc = S.droids.filter((d) => d.type === 'process' && d.st === 'work').length;
     const chef = S.droids.some((d) => d.type === 'chef' && d.st === 'work');
     b *= 1 + 0.15 * Math.min(2, proc) + (chef ? 0.25 : 0);
+    // Opérateur obsolète : la machine tourne moins vite
+    const op = S.droids.find((d) => d.st === 'work' && (d.job === m.id || d.job2 === m.id));
+    if (op && op.old) b *= T.oldSlow;
   }
   return b;
 }
@@ -279,7 +291,19 @@ function returnInputs(S, m) {
   for (const [k, n] of Object.entries(m.inp)) if (!keep[k] && n > 0) { back[k] = n; addStock(S, k, n); delete m.inp[k]; }
   return back;
 }
-export function activeOrders(S) { return S.orders.filter((o) => o.left > 0); }
+export function activeOrders(S) { return S.orders.filter((o) => sum(o.left) > 0); }
+// Colis attendus par les commandes, par métier : { ouvrier: 2, logistique: 1 }
+export function ordersNeed(S) {
+  const need = {};
+  for (const o of activeOrders(S)) for (const [t, n] of Object.entries(o.left)) if (n > 0) need[t] = (need[t] || 0) + n;
+  return need;
+}
+const colisOf = (t) => 'colis_' + t;
+const typeOfColis = (k) => (ITEMS[k] && ITEMS[k].kind === 'colis' ? ITEMS[k].droid : null);
+// Texte d'une commande : « 2 droïdes standards + 1 agent logistique »
+export function orderText(o, field = 'left') {
+  return Object.entries(o[field]).filter(([, n]) => n > 0).map(([t, n]) => `${n} ${t === 'ouvrier' ? (n > 1 ? 'droïdes standards' : 'droïde standard') : DROIDS[t].name.toLowerCase()}`).join(' + ');
+}
 
 // ---------- ce que le joueur peut faire là où il est ----------
 export function targets(S, id) {
@@ -361,10 +385,36 @@ export function targets(S, id) {
       continue;
     }
     if (m.type === 'quai') {
-      const act = activeOrders(S);
-      if ((p.sac.colis || 0) > 0 && act.length) add(pl.id, d, { act: 'ship', label: `Livrer ${Math.min(p.sac.colis, sum(Object.fromEntries(act.map((o) => [o.id, o.left]))))} colis` });
-      else if (act.length) add(pl.id, d, { off: true, label: `Commandes : ${act.map((o) => o.left).join(' + ')} colis à livrer` });
+      const act = activeOrders(S), need = ordersNeed(S);
+      const can = Object.entries(p.sac).reduce((a, [k, n]) => a + (typeOfColis(k) && need[typeOfColis(k)] ? Math.min(n, need[typeOfColis(k)]) : 0), 0);
+      if (can > 0) add(pl.id, d, { act: 'ship', label: `Livrer ${can} colis` });
+      else if (act.length) add(pl.id, d, { off: true, label: 'Commande : ' + orderText(act[0]) });
       else add(pl.id, d, { off: true, label: 'Pas de commande pour l’instant' });
+      continue;
+    }
+    // Emballeuse : un droïde qui te suit + un carton → un colis
+    if (m.type === 'emballeuse' && fol.length && (m.operator || !fol.some((x) => DROIDS[x.type].work === 'machine'))) {
+      const dr = fol[0], carton = (m.inp.carton || 0) + (p.sac.carton || 0);
+      const what = dr.type === 'ouvrier' ? 'droïde standard' : DROIDS[dr.type].name.toLowerCase();
+      if (carton > 0) add(pl.id, d, { act: 'pack', droid: dr.id, label: `Emballer : ${what} (1 carton)` });
+      else add(pl.id, d, { off: true, label: 'Il faut un carton pour emballer (recette Cartons)' });
+      continue;
+    }
+    // Emballeuse : faire venir un droïde spécialisé demandé par une commande (il vient se faire emballer)
+    if (m.type === 'emballeuse' && !(sum(m.out) > 0 && !full) && !m.broken) {
+      const need = ordersNeed(S);
+      const coming = (t) => S.droids.filter((x) => x.st === 'pack' && x.type === t).length;
+      const t = Object.keys(need).find((k) => k !== 'ouvrier' && coming(k) < need[k] && S.droids.some((x) => x.type === k && x.st !== 'pack' && x.st !== 'spec'));
+      if (t) {
+        const dr = S.droids.filter((x) => x.type === t && x.st !== 'pack' && x.st !== 'spec').sort((a, b) => !!b.old - !!a.old)[0];
+        // (sans carton, on laisse les autres actions : charger, actionner…)
+        if ((m.inp.carton || 0) > 0 || (p.sac.carton || 0) > 0) { add(pl.id, d, { act: 'callpack', droid: dr.id, label: `Faire venir : ${DROIDS[t].name.toLowerCase()} (commande)` }); continue; }
+      }
+    }
+    // Recycleur : un droïde obsolète qui te suit y est démonté (il rend une carcasse et un circuit)
+    if (m.type === 'recycleur' && fol.some((x) => x.old)) {
+      const dr = fol.find((x) => x.old);
+      add(pl.id, d, { act: 'scrap', droid: dr.id, label: `Recycler : ${DROIDS[dr.type].name.toLowerCase()} obsolète` });
       continue;
     }
     if (def.fuel) {
@@ -435,7 +485,9 @@ export function waitWhy(S, m) {
   // Toutes les recettes cochées sont au plafond : la machine attend que le stock baisse
   if (m.sel.length && m.sel.every((rid) => recipeCapped(S, rid))) return `Stock plein (${recipeCapped(S, m.sel[0])}) : en pause`;
   const miss = missingIn(S, m);
-  return sum(miss) ? 'il manque ' + fmt(miss) : 'sortie pleine : récupère la production';
+  if (sum(miss)) return 'il manque ' + fmt(miss);
+  if (r.droid && !S.droids.some((d) => d.type === r.droid && d.st === 'idle')) return 'il faut un droïde standard libre (assembleur)';
+  return 'sortie pleine : récupère la production';
 }
 const declCount = (p) => Object.entries(p.sac).reduce((a, [k, n]) => a + (apart(k) ? n : 0), 0);
 const depositable = (p) => sacCount(p) - declCount(p);
@@ -558,6 +610,28 @@ function press(S, id) {
       break;
     }
     case 'ship': shipColis(S, p, null); break;
+    case 'pack': { const dr = S.droids.find((x) => x.id === t.droid); if (dr) packDroid(S, p, S.machines[t.key], dr); break; }
+    case 'callpack': {
+      const dr = S.droids.find((x) => x.id === t.droid), m = S.machines[t.key];
+      if (!dr) break;
+      // le carton du sac va dans l'emballeuse
+      if (!(m.inp.carton > 0) && (p.sac.carton || 0) > 0) { addSac(p, 'carton', -1); m.inp.carton = 1; }
+      releaseDroid(S, dr);
+      dr.st = 'pack'; dr.who = null;
+      sfx(S, id, 'ok');
+      toast(S, 'all', `${DROIDS[dr.type].name} en route vers l’emballeuse.`, 'info');
+      break;
+    }
+    case 'scrap': {
+      const dr = S.droids.find((x) => x.id === t.droid), m = S.machines[t.key];
+      if (!dr) break;
+      releaseDroid(S, dr);
+      S.droids = S.droids.filter((x) => x !== dr);
+      for (const k of ['carcasse', 'circuit']) m.out[k] = (m.out[k] || 0) + 1;
+      sfx(S, 'all', 'clong');
+      toast(S, 'all', `${DROIDS[dr.type].name} obsolète recyclé : 1 carcasse et 1 circuit récupérés.`, 'good');
+      break;
+    }
     case 'take': { const dr = S.droids.find((d) => d.id === t.droid); dr.st = 'follow'; dr.who = id; sfx(S, id, 'pick'); break; }
     case 'reprendre': { const dr = S.droids.find((d) => d.id === t.droid); releaseDroid(S, dr); dr.st = 'follow'; dr.who = id; sfx(S, id, 'pick'); break; }
     case 'leave': for (const d of followers(S, id)) { d.st = 'idle'; d.who = null; } break;
@@ -594,23 +668,41 @@ function assignDroid(S, dr, m) {
   toast(S, 'all', msg, 'good');
 }
 
+// Colis livrés au quai : ils vont aux commandes qui les attendent (la plus ancienne d'abord)
 function shipColis(S, p, d) {
-  let n = p ? p.sac.colis || 0 : d.task.load;
+  const loads = p ? Object.entries(p.sac).filter(([k, n]) => typeOfColis(k) && n > 0) : [[d.task.item, d.task.load]];
   let shipped = 0;
-  for (const o of activeOrders(S)) {
-    const q = Math.min(n, o.left);
-    o.left -= q; n -= q; shipped += q;
-    if (o.left === 0) {
-      earn(S, o.reward, PLOT_BY_ID.quai); S.stats.orders += 1;
-      sfx(S, 'all', 'won');
-      toast(S, 'all', `Commande livrée : +${o.reward} crédits`, 'good');
+  for (const [k, n0] of loads) {
+    const t = typeOfColis(k);
+    let n = n0;
+    for (const o of activeOrders(S)) {
+      const q = Math.min(n, o.left[t] || 0);
+      if (!q) continue;
+      o.left[t] -= q; n -= q; shipped += q;
+      if (p) addSac(p, k, -q); else d.task.load -= q;
+      if (sum(o.left) === 0) {
+        earn(S, o.reward, PLOT_BY_ID.quai); S.stats.orders += 1;
+        if (o.special) S.stats.special = (S.stats.special || 0) + 1;
+        sfx(S, 'all', 'won');
+        toast(S, 'all', `Commande satisfaite : ${orderText(o, 'want')} · +${o.reward} crédits`, 'good');
+      }
+      if (n <= 0) break;
     }
-    if (n <= 0) break;
   }
-  if (p) addSac(p, 'colis', -shipped);
-  else d.task.load -= shipped;
-  S.orders = S.orders.filter((o) => o.left > 0);
+  S.orders = S.orders.filter((o) => sum(o.left) > 0);
   if (shipped && p) toast(S, 'all', `${shipped} colis livré${shipped > 1 ? 's' : ''}`, 'good');
+}
+// Emballer à la main le droïde qui suit le joueur
+function packDroid(S, p, m, dr) {
+  if ((m.inp.carton || 0) > 0) { m.inp.carton -= 1; if (!m.inp.carton) delete m.inp.carton; } else if (p) addSac(p, 'carton', -1); else return false;
+  releaseDroid(S, dr);
+  S.droids = S.droids.filter((x) => x !== dr);
+  const k = colisOf(dr.type);
+  m.out[k] = (m.out[k] || 0) + 1;
+  S.stats.made[k] = (S.stats.made[k] || 0) + 1;
+  sfx(S, 'all', 'won');
+  toast(S, 'all', `${ITEMS[k].name} prêt : apporte-le au quai.`, 'good');
+  return true;
 }
 
 function release(S, id) {
@@ -791,6 +883,8 @@ function command(S, id, e) {
   }
 }
 
+// Droïdes d'un métier (en formation compris) : 3 au plus par métier
+export const typeCount = (S, type) => S.droids.filter((d) => d.type === type || d.spec === type).length;
 function specialize(S, id, type) {
   const p = S.players[id];
   const def = DROIDS[type];
@@ -799,6 +893,7 @@ function specialize(S, id, type) {
   if (boxDist(p, plotBox(PLOT_BY_ID.atelier)) > REACH + 1.5) return;
   const dr = followers(S, id).find((d) => d.type === 'ouvrier');
   if (!dr) return;
+  if (typeCount(S, type) >= MAX_PER_TYPE) { toast(S, id, `Déjà ${MAX_PER_TYPE} : ${def.name.toLowerCase()}, c’est le maximum.`, 'warn'); sfx(S, id, 'err'); return; }
   if (have(S, p, def.kit) < 1) { toast(S, id, `Il faut un kit : ${lc(def.kit)}`, 'warn'); sfx(S, id, 'err'); return; }
   pay(S, p, { [def.kit]: 1 });
   m.busy = dr.id;
@@ -1051,6 +1146,12 @@ function machines(S, dt) {
     m.t = 0;
     if (r.any) produceAny(S, m, r);
     else {
+      // Emballage : le droïde standard libre le plus proche entre dans la machine
+      if (r.droid) {
+        const pl = PLOT_BY_ID[m.id];
+        const dr = S.droids.filter((d) => d.type === r.droid && d.st === 'idle').sort((a, b) => dist(a, pl) - dist(b, pl))[0];
+        S.droids = S.droids.filter((d) => d !== dr);
+      }
       for (const [k, n] of Object.entries(r.in)) { m.inp[k] -= n; if (!m.inp[k]) delete m.inp[k]; }
       for (const [k, n] of Object.entries(r.out)) {
         if (k === 'droide') { spawnDroid(S, m); continue; }
@@ -1116,7 +1217,7 @@ function produceAny(S, m, r) {
 function spawnDroid(S, m) {
   const pl = PLOT_BY_ID[m.id];
   const n = S.droids.filter((d) => d.st === 'idle').length;
-  S.droids.push({ id: S.seq++, type: 'ouvrier', x: pl.x + MACHINES[m.type].w / 2 + 1.3, z: pl.z + 1.2 + (n % 3) * 0.9, rot: 0, st: 'idle', who: null, job: null, job2: null, task: null, carry: null });
+  S.droids.push({ id: S.seq++, type: 'ouvrier', x: pl.x + MACHINES[m.type].w / 2 + 1.3, z: pl.z + 1.2 + (n % 3) * 0.9, rot: 0, st: 'idle', who: null, job: null, job2: null, task: null, carry: null, lv: S.level });
   S.made += 1;
   earn(S, CREDITS.droid, pl);
   sfx(S, 'all', 'won');
@@ -1144,6 +1245,13 @@ function pannes(S) {
 function droids(S, dt) {
   const obs = obstacles(S);
   const fcount = { A: 0, B: 0 };
+  // Usure : 3 niveaux après sa fabrication, un droïde devient obsolète (il travaille moins vite)
+  let worn = 0;
+  for (const d of S.droids) {
+    if (d.old || d.st === 'spec' || S.level - (d.lv ?? S.level) < T.life) continue;
+    d.old = true; worn++;
+  }
+  if (worn) toast(S, 'all', `${worn > 1 ? worn + ' droïdes sont obsolètes' : 'Un droïde est obsolète'} : ${worn > 1 ? 'ils travaillent' : 'il travaille'} moins vite. Amène-les au recycleur pour récupérer leurs pièces.`, 'warn');
   for (const d of S.droids) {
     d.moving = false; d.repairing = false; d.pose = null;
     // Place au coin pause libérée dès que le droïde a repris le travail
@@ -1161,6 +1269,11 @@ function droids(S, dt) {
       const f = front(PLOT_BY_ID[d.job]);
       if (!goTo(d, f, dt, obs, 3.4)) d.st = 'go';
       else { d.st = 'work'; d.rot = Math.PI; }
+    } else if (d.st === 'pack') {
+      // Appelé pour une commande : il va à l'emballeuse et s'y fait emballer (dès qu'il y a un carton)
+      const m = S.machines.emballeuse;
+      if (!m) { d.st = 'idle'; continue; }
+      if (goTo(d, front(PLOT_BY_ID.emballeuse), dt, obs, 4)) packDroid(S, null, m, d);
     } else if (d.st === 'spec') {
       d.t -= dt;
       if (d.t <= 0) {
@@ -1264,6 +1377,7 @@ export function waypoint(d, pt) {
   return a ? first : aroundSlab(d, first) || first;
 }
 function goTo(d, pt, dt, obs, speed = 3.9) {
+  if (d.old) speed *= T.oldSlow;
   // Assis au coin pause : il se lève et ressort par le bout du canapé avant de partir
   if (d.sat) { if (glide(d, sofaEnd(d, pt), dt, 2.4)) d.sat = false; return false; }
   const wp = waypoint(d, pt);
@@ -1411,11 +1525,13 @@ const BRAINS = {
           cands.push({ score: (miss[k] > 0 ? 10 : 5) - have + (m.type === 'assembleur' ? 0.5 : 0), task: { from, to: m.id, item: k, want: n, sig } });
         }
       }
-      const left = activeOrders(S).reduce((a, o) => a + o.left, 0);
-      if (left > 0 && S.machines.quai && !busy.has('ship')) {
-        const src = Object.values(S.machines).find((x) => (x.out.colis || 0) > 0);
-        const from = src ? src.id : (S.stock.colis || 0) > 0 ? 'hq' : null;
-        if (from) cands.push({ score: 12, task: { from, to: 'quai', item: 'colis', want: left, sig: 'ship' } });
+      // Colis attendus par les commandes : au quai
+      if (S.machines.quai) for (const [t, left] of Object.entries(ordersNeed(S))) {
+        const k = colisOf(t), sig = 'ship' + t;
+        if (busy.has(sig)) continue;
+        const src = Object.values(S.machines).find((x) => (x.out[k] || 0) > 0);
+        const from = src ? src.id : (S.stock[k] || 0) > 0 ? 'hq' : null;
+        if (from) cands.push({ score: 12, task: { from, to: 'quai', item: k, want: left, sig } });
       }
       cands.sort((a, b) => b.score - a.score);
       if (!cands.length) { rest(S, d, dt, obs); return; }
@@ -1558,10 +1674,10 @@ const BRAINS = {
     S.chefT -= dt;
     if (S.chefT > 0) return;
     S.chefT = 2;
-    const asm = S.machines.assembleur;
-    if (asm && activeOrders(S).length && recipeAvail(S, 'caisse') && !asm.sel.includes('caisse')) {
-      asm.sel.push('caisse');
-      toast(S, 'all', 'Chef de production : l’assembleur lance des droïdes à livrer.', 'info');
+    const emb = S.machines.emballeuse;
+    if (emb && ordersNeed(S).ouvrier && recipeAvail(S, 'colis') && !emb.sel.includes('colis')) {
+      emb.sel.push('colis');
+      toast(S, 'all', 'Chef de production : l’emballeuse emballe les droïdes standards commandés.', 'info');
     }
   },
 };
@@ -1769,19 +1885,34 @@ function nodes(S, dt) {
 }
 
 // ---------- commandes clients ----------
+// Vous êtes les directeurs : les clients commandent des droïdes standards et, plus tard, des droïdes spécialisés
+// (commande « spéciale »). On les livre emballés au quai avant la fin du délai.
 function orders(S, dt) {
   if (!S.machines.quai) return;
   for (const o of S.orders) o.t -= dt;
-  const lost = S.orders.filter((o) => o.t <= 0 && o.left > 0);
+  const lost = S.orders.filter((o) => o.t <= 0 && sum(o.left) > 0);
   if (lost.length) { S.orders = S.orders.filter((o) => o.t > 0); toast(S, 'all', 'Commande perdue : le client est parti.', 'bad'); sfx(S, 'all', 'err'); }
   S.orderT -= dt;
-  if (S.orderT <= 0 && S.orders.length < 2) {
-    const qty = S.level >= 9 ? 2 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 2);
-    S.orders.push({ id: S.seq++, qty, left: qty, t: 300, life: 300, reward: 20 * qty + 20 });
-    S.orderT = 75;
+  if (S.orderT <= 0 && S.orders.length < (S.level >= 14 ? 3 : 2)) {
+    S.orders.push(newOrder(S));
+    S.orderT = 60 + Math.random() * 30;
     sfx(S, 'all', 'order');
-    toast(S, 'all', `Nouvelle commande : ${qty} droïde${qty > 1 ? 's' : ''} à livrer en colis.`, 'info');
+    const o = S.orders[S.orders.length - 1];
+    toast(S, 'all', `Nouvelle commande${o.special ? ' spéciale' : ''} : ${orderText(o, 'want')}.`, 'info');
   }
+}
+function newOrder(S) {
+  const want = { ouvrier: 1 + Math.floor(Math.random() * (S.level >= 13 ? 3 : 2)) };
+  // Commande spéciale : un droïde d'un métier déjà débloqué (à partir du niveau 10)
+  const types = SPEC_ORDER.filter((t) => DROIDS[t].lvl <= S.level);
+  let special = false;
+  if (S.level >= 9 && types.length && Math.random() < 0.4) {
+    special = true;
+    want[types[Math.floor(Math.random() * types.length)]] = 1;
+    if (Math.random() < 0.5) delete want.ouvrier;
+  }
+  const n = sum(want);
+  return { id: S.seq++, want, left: { ...want }, special, t: 300 + 60 * n, life: 300 + 60 * n, reward: 20 + 18 * (want.ouvrier || 0) + (special ? 45 : 0) };
 }
 
 // ---------- objectifs ----------
@@ -1799,6 +1930,7 @@ export function goalProgress(S, g) {
     case 'surplus+': v = (st.surplus || 0) - (b.surplus || 0); break;
     case 'orders+': v = st.orders - b.orders; break;
     case 'spec+': v = (st.spec || 0) - (b.spec || 0); break;
+    case 'special+': v = (st.special || 0) - (b.special || 0); break;
     case 'item+': v = (st.made[item] || 0) - (b.items[item] || 0); break;
     case 'work': v = S.droids.filter((d) => d.st === 'work').length; break;
     case 'crea': v = S.animals.filter((a) => a.st === 'installed').length; break;
