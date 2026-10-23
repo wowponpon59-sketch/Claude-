@@ -1,10 +1,10 @@
 // Interface : écrans, HUD, menus, commandes tactiles, caméra et repères au-dessus des objets.
 import {
-  ITEMS, ITEM_ORDER, RAW, RAW_LEVEL, SAC_MAX, NODE_TYPES, MACHINES, PLOTS, ENTREPOT, CORE, DROIDS, SPEC_ORDER,
-  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, QC_BASES, LABEL_RANGE, ANIMAL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, other,
+  ITEMS, ITEM_ORDER, RAW, RAW_LEVEL, SAC_MAX, NODE_TYPES, MACHINES, PLOTS, ENTREPOT, PART, HEAVY, DROIDS, SPEC_ORDER,
+  ANIMALS, LEVELS, POST_R, PLAYER_COLORS, T, RECIPES, OUTFITS, PACK, LOOKS, SLOTS, ME_SLOTS, ME_OUTFITS, ME_COLORS, QC_BASES, LABEL_RANGE, ANIMAL_RANGE, REACH, PAUSE, RAW_CONTENT, RECYCLABLE, other,
 } from './config.js';
 import { NODES, height, PLOT_BY_ID, plotBox } from './world.js';
-import { postL, postR, plotUnlocked, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, genText, apart, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
+import { postL, postR, plotUnlocked, partOut, cadence, recipeAvail, activeOrders, needPower, isProd, genFill, genText, apart, goalProgress, packPrice, waitWhy, anyMatch, recipeCapped, reserveOf } from './sim.js';
 import { boxDist } from './move.js';
 
 const $ = (id) => document.getElementById(id);
@@ -299,7 +299,7 @@ export function fillSpec(st, myId, onPick) {
 }
 
 // ---------- panneau Usine ----------
-export function fillUsine(st, tab, send) {
+export function fillUsine(st, tab, send, myId = 'A') {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === tab));
   let html = '';
   if (tab === 'entrepot') {
@@ -335,6 +335,29 @@ export function fillUsine(st, tab, send) {
       const c = st.animals.filter((x) => x.sp === k && x.st === 'installed').length;
       html += `<div class="mrow"><b>${a.name}</b> <span class="muted">${a.desc} · installés : ${c}</span></div>`;
     }
+  } else if (tab === 'moi') {
+    // Ton personnage : tenues achetées une fois, couleur au choix
+    const me = st.wardrobe.me[myId];
+    html += `<p class="muted">Habille ton propre personnage avec les crédits de l’usine (ils sont communs aux deux joueurs). Touche une tenue achetée pour la mettre ou l’enlever, puis choisis sa couleur.</p><p class="credits-line">Crédits : <b>${st.credits}</b></p>`;
+    for (const [sl, slName] of Object.entries(ME_SLOTS)) {
+      html += `<div class="slot"><span class="slname">${slName}</span><div class="chips">`;
+      for (const [o, def] of Object.entries(ME_OUTFITS)) {
+        if (def.slot !== sl) continue;
+        const sw = me.owned[o] ? `<i class="sw" style="background:${ME_COLORS[me.col[o] || 0]}"></i>` : '';
+        if (me.owned[o]) html += `<button class="pick ${me.wear[sl] === o ? 'on' : ''}" data-a="mewear" data-o="${o}">${sw}${def.name}</button>`;
+        else html += `<button class="pick buy" data-a="mebuy" data-o="${o}" ${st.credits >= def.price ? '' : 'disabled'}>${def.name} · ${def.price}</button>`;
+      }
+      html += '</div></div>';
+      const worn = me.wear[sl];
+      if (worn) html += `<div class="chips swatches">${ME_COLORS.map((c, i) => `<button class="swb ${(me.col[worn] || 0) === i ? 'on' : ''}" data-a="mecol" data-o="${worn}" data-n="${i}" style="background:${c}" aria-label="Couleur ${i + 1}"></button>`).join('')}</div>`;
+    }
+  } else if (tab === 'amenager') {
+    html += '<p class="muted">Déplace une machine pour organiser ton usine : choisis-la, marche jusqu’au nouvel emplacement sur la dalle, puis « Poser ici ». Elle garde son contenu et ses créatures.</p>';
+    const ms = Object.values(st.machines);
+    if (!ms.length) html += '<p class="muted">Aucune machine construite pour l’instant.</p>';
+    html += '<div class="chips">';
+    for (const m of ms) html += `<button class="pick" data-a="place" data-m="${m.id}">${MACHINES[m.type].name}${m.id.endsWith('2') ? ' n°2' : ''}</button>`;
+    html += '</div>';
   } else if (tab === 'vestiaire') {
     html += `<p class="muted">Les crédits se gagnent avec les objectifs, les niveaux, les commandes et en faisant tourner l’usine. Les tenues se cumulent : une par emplacement, aux couleurs du métier. Touche une tenue achetée pour la mettre ou l’enlever.</p><p class="credits-line">Crédits : <b>${st.credits}</b></p>`;
     for (const t of SPEC_ORDER) {
@@ -366,7 +389,10 @@ export function fillUsine(st, tab, send) {
   body.innerHTML = html;
   body.querySelectorAll('button[data-a]').forEach((b) => b.addEventListener('click', () => {
     if (b.disabled) return;
-    if (b.dataset.a === 'buy') send({ c: 'buy', type: b.dataset.t, outfit: b.dataset.o });
+    if (b.dataset.a === 'place') send({ c: 'place', mach: b.dataset.m });
+    else if (b.dataset.a === 'mebuy' || b.dataset.a === 'mewear') send({ c: b.dataset.a, outfit: b.dataset.o });
+    else if (b.dataset.a === 'mecol') send({ c: 'mecol', outfit: b.dataset.o, n: +b.dataset.n });
+    else if (b.dataset.a === 'buy') send({ c: 'buy', type: b.dataset.t, outfit: b.dataset.o });
     else if (b.dataset.a === 'pack') send({ c: 'pack', type: b.dataset.t });
     else send({ c: 'wear', type: b.dataset.t, outfit: b.dataset.o || null });
   }));
@@ -646,8 +672,9 @@ export function objectiveSpot(st) {
   const g = LEVELS[st.level].goals.find((x) => !st.goals[x.id]);
   if (!g) return null;
   const at = (id) => (st.machines[id] || PLOT_BY_ID[id] ? { x: PLOT_BY_ID[id].x, z: PLOT_BY_ID[id].z } : null);
-  if (g.id === 'core' && !st.core.placed) return { x: st.core.x, z: st.core.z };
-  if (PLOT_BY_ID[g.id]) return at(g.id);
+  if (g.id === 'core' && !st.parts.assembleur.placed) return { x: st.parts.assembleur.x, z: st.parts.assembleur.z };
+  // Machine à construire : d'abord sa pièce lourde, si elle est encore dans le terrain vague
+  if (PLOT_BY_ID[g.id]) { const c = st.parts[g.id]; return c && !c.placed && !st.machines[g.id] ? { x: c.x, z: c.z } : at(g.id); }
   if ((DROIDS[g.id] || g.id === 'qualiteD') && st.machines.atelier) return at('atelier');
   if (g.id === 'fuel') return at('generateur');
   if (g.id === 'heavy') { const m = Object.values(st.machines).find((x) => x.broken === 'heavy'); return m ? at(m.id) : null; }
@@ -701,7 +728,7 @@ export function worldLabels(st, myId, me) {
       } else {
         const miss = {};
         for (const [k, n] of Object.entries(def.cost)) miss[k] = Math.max(0, n - (ps.del[k] || 0));
-        const coreTxt = def.core && !st.core.placed ? ' · + cœur d’assembleur' : '';
+        const coreTxt = st.parts && st.parts[p.id] && !st.parts[p.id].placed ? ` · + ${HEAVY[p.type].name.toLowerCase()} (à deux)` : '';
         add('p' + p.id, p.x, 2.4, p.z, chip('solo', `Chantier : ${name}`) + sub(count(miss) ? 'Il manque ' + listItems(miss) + coreTxt : 'Matériaux livrés' + coreTxt));
       }
       continue;
@@ -745,15 +772,18 @@ export function worldLabels(st, myId, me) {
     add('o' + m.id, p.x, y + (close(plotBox(p)) ? 1.9 : 0.4), p.z, `<div class="outb">${keys.map((k) => `<span class="it">${itemIcon(k)}${m.out[k]}</span>`).join('')}</div>`);
   }
 
-  if (!st.core.placed && within(st.core.x, st.core.z, ANIMAL_RANGE - LABEL_RANGE)) {
-    const c = st.core;
+  // Pièces lourdes : nom, poignées et machine de destination
+  for (const [pid, c] of Object.entries(st.parts || {})) {
+    if (!partOut(st, pid) || !within(c.x, c.z, ANIMAL_RANGE - LABEL_RANGE)) continue;
     const side = (s) => {
       const who = ['A', 'B'].find((id) => c.hand[id] === s);
       if (who) return who;
-      const n = near({ x: c.x + (s === 'L' ? -1 : 1) * CORE.handle, z: c.z });
+      const n = near({ x: c.x + (s === 'L' ? -1 : 1) * PART.handle, z: c.z });
       return n ? 'h' + n : '';
     };
-    add('core', c.x, height(c.x, c.z) + 2.0, c.z, chip('duo', 'Cœur d’assembleur') + pill(side('L'), side('R')) + sub('À porter à deux jusqu’à l’assembleur'));
+    const dest = MACHINES[PLOT_BY_ID[pid].type].name.toLowerCase() + (pid.endsWith('2') ? ' n°2' : '');
+    const how = c.eng ? 'Deux ingénieurs la portent' : c.hand.E ? 'Un ingénieur t’aide à la porter' : `À porter à deux jusqu’à : ${dest}`;
+    add('part' + pid, c.x, height(c.x, c.z) + 2.0, c.z, chip('duo', HEAVY[PLOT_BY_ID[pid].type].name) + pill(side('L'), side('R')) + sub(how));
   }
 
   if (within(PAUSE.x, PAUSE.z, 2)) {

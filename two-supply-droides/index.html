@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Two Supply">
 <meta name="theme-color" content="#0e1115">
-<meta name="description" content="Two Supply — Droïdes : version 0.4.3, usine de droïdes en 20 niveaux dans un terrain vague, en solo ou à deux.">
+<meta name="description" content="Two Supply — Droïdes : version 0.5, usine de droïdes en 20 niveaux dans un terrain vague, en solo ou à deux.">
 <title>Two Supply — Droïdes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -63,6 +63,7 @@
   <div id="call-flash"></div>
   <div id="call-msg"></div>
   <div id="save-tick" role="status">Partie sauvegardée ✓</div>
+  <div id="place-bar" hidden><span id="place-msg"></span><button id="btn-place-ok" class="btn small-btn" type="button">Poser ici</button><button id="btn-place-cancel" class="btn small-btn ghost" type="button">Annuler</button></div>
   <label id="haptic-label" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label>
   <div id="banner"></div>
   <div id="edge-arrow"><svg viewBox="0 0 24 24"><path d="M4 12l14-8v16z"/></svg></div>
@@ -74,7 +75,7 @@
     <div class="brand">
       <div class="hazard"></div>
       <h1>TWO<span>SUPPLY</span></h1>
-      <p class="kicker">Droïdes · version 0.4.3 · 20 niveaux</p>
+      <p class="kicker">Droïdes · version 0.5 · 20 niveaux</p>
       <p class="tag">Un terrain vague, des débris, des créatures de ferraille. Construisez à la main l’usine qui fabriquera vos premiers droïdes, puis faites-en vos employés.</p>
     </div>
     <div class="home-actions">
@@ -134,7 +135,9 @@
       <li><b>Fouiller</b> les débris (garder appuyé) remplit ton sac. Ils changent de place à chaque partie ; les infos s’affichent quand tu t’approches. À l’<b>entrepôt</b>, choisis exactement ce que tu prends et ce que tu déposes.</li>
       <li>Près d’une machine, le bouton <b>Recettes</b> choisit ce qu’elle fabrique. Plusieurs recettes cochées : elle en fait 1 de chaque à tour de rôle.</li>
       <li>Les boutons <b>Équipe</b> et <b>Vestiaire</b> (en haut) montrent vos droïdes et leurs tenues, achetées avec les crédits gagnés.</li>
-      <li><span class="badge solo"></span> blanc : seul. <span class="badge duo"></span> doré à bandes : à <b>deux</b> (monter une machine, porter le cœur d’assembleur, attraper une créature).</li>
+      <li><span class="badge solo"></span> blanc : seul. <span class="badge duo"></span> doré à bandes : à <b>deux</b> (monter une machine, porter sa pièce lourde depuis le terrain vague, attraper une créature).</li>
+      <li>Chaque vraie machine a sa <b>pièce lourde</b> à ramener à deux avant le montage. Deux ingénieurs peuvent aller la chercher et monter la machine tout seuls ; un ingénieur seul a besoin de toi pour visser.</li>
+      <li><b>Usine › Aménager</b> : déplace une machine où tu veux sur la dalle. <b>Vestiaire › Moi</b> : habille ton personnage.</li>
       <li id="howto-solo">En solo, ton <b>coéquipier IA</b> attend au coin pause et vient prendre tout seul l’autre côté des tâches à deux. Le bouton d’appel le fait venir près de toi.</li>
     </ol>
     <button id="btn-go" class="btn primary" type="button">C’est parti</button>
@@ -162,6 +165,8 @@
       <button class="tab on" data-tab="entrepot" type="button">Entrepôt et machines</button>
       <button class="tab" data-tab="org" type="button">Organigramme</button>
       <button class="tab" data-tab="vestiaire" type="button">Vestiaire</button>
+      <button class="tab" data-tab="moi" type="button">Moi</button>
+      <button class="tab" data-tab="amenager" type="button">Aménager</button>
       <button class="tab" data-tab="betes" type="button">Créatures</button>
     </div>
     <div id="usine-body"></div>

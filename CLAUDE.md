@@ -1,7 +1,7 @@
 # Dépôt de Vianney : jeu « Two Supply — Droïdes » (projet actif) et Coach Échecs
 
 Ce dépôt contient deux choses :
-- `two-supply-droides/` : **le projet en cours**, un jeu vidéo coopératif pour téléphones (version 0.4.3).
+- `two-supply-droides/` : **le projet en cours**, un jeu vidéo coopératif pour téléphones (version 0.5).
 - La racine (`index.html`, `js/`, `server.js`, `test/`) : l'application Coach Échecs, à ne pas toucher sauf demande.
 - `two-supply/` : la toute première version du jeu (v0.1, sur le pain). À garder intacte.
 
@@ -45,9 +45,11 @@ Points importants :
 - **Sauvegarde** : clé `twosupply-droides-save-v04` (format `{at, code, st}`, `st.v === 4`). Garder la compatibilité des sauvegardes existantes (ajouter des valeurs par défaut dans `restoreState`).
 - Commandes envoyées par l'invité : liste blanche `CMDS` dans `main.js` (y ajouter toute nouvelle commande).
 - **Rendu** : `gl.js` ne dessine pas ce qui est hors de l'écran (rayon `cullR` posé sur chaque objet dans `scene.js`) ; les droïdes à plus de 14 m passent en modèle simplifié (`setFar`). Penser à mettre un `cullR` sur tout nouvel objet de la scène. `__ts.renderer().drawCalls` donne le nombre d'objets dessinés.
+- **Aménagement** : les positions des machines sont modifiables (`S.layout`, appliqué aux objets `PLOTS` par `applyLayout` dans `world.js`, côté hôte et invité). Toujours lire `p.x`/`p.z` (jamais des positions recopiées). `placeWhy` dit si une place est libre.
+- **Pièces lourdes** : `S.parts[plotId]` (dont `assembleur`, l'ancien `S.core`, migré dans `restoreState`). Emplacements tirés avec la graine (`PART_SPOTS`, `world.js`). Ingénieurs : `engineersPlan` et `engineerCarry` dans `sim.js`.
 - Outils de debug dans la page : `window.__ts` (`app`, `tp(x, z, yaw)`, `advance(secondes)`, `forceBuild(id)`, `saveGame()`…), `?net=fake` pour jouer à deux dans deux onglets, `window.__cutLinks()` pour simuler une coupure.
 
-## Règles du jeu validées par Vianney (0.4.3)
+## Règles du jeu validées par Vianney (0.5)
 
 - 20 niveaux, en alternant une nouveauté et un niveau de « rodage » (objectifs faisables avec l'existant).
 - Métiers : logistique et maintenance au niveau 3, agent de recherche au niveau 5 (objectif au niveau 6), ingénieur au niveau 7, chef de la maintenance au niveau 9, expert logistique au niveau 10, responsable qualité au niveau 13, adjoint qualité au niveau 14, puis production et process (16), achat (18), adjoint et chef de production (20). Les métiers à venir apparaissent sous cadenas « Niveau X ».
@@ -59,6 +61,10 @@ Points importants :
 - Coin pause à côté de l'entrepôt : les droïdes spécialisés sans tâche s'y assoient avec un café (6 places, dont la première réservée au coéquipier IA en solo), les autres restent debout autour. Les droïdes standards attendent près de l'assembleur. Les droïdes contournent par les coins les meubles et machines qui barrent leur chemin (`detour` dans `sim.js`).
 - Coéquipier IA (solo) : assis au canapé ; il vient pour les tâches à deux (montage, panne lourde, caisse, créature) ou quand on appuie sur le bouton d'appel (il suit 1 minute).
 - Objectifs : « Former 2 droïdes spécialisés » (`spec+`) remplace « Produire N droïdes » à partir du niveau 6.
+- Pièces lourdes (0.5) : une par vraie machine (pas zone ni quai), à ramener à deux. Un ingénieur seul livre et tient la pièce mais un joueur doit visser ; deux ingénieurs vont chercher la pièce et montent seuls ; à deux téléphones, un ingénieur aide le joueur qui porte seul quand le partenaire est loin.
+- Aménager (0.5) : déplacer une machine construite sur la dalle, elle garde son contenu.
+- Vestiaire › Moi (0.5) : tenues des joueurs (11 tenues, 10 couleurs), crédits communs.
+- Jour et nuit (0.5) : cycle de 12 minutes de jeu, lampadaires la nuit. Vianney ne veut pas de baisse automatique des détails : optimiser plutôt (aujourd'hui seule la réduction de résolution/ombres de la 0.4 reste en dernier recours).
 - Noms des machines, bâtiments et débris visibles à moins de 3 m de leur bord (`LABEL_RANGE`), créatures à 8 m.
 - Crédits gagnés en jouant. Tenues cumulables par métier ; on ne peut payer que 2 ou 3 tenues par métier avant le niveau 10 ; pack « L'intégrale » au niveau 10.
 - Créatures : le coéquipier IA les rabat vers le joueur. Une fois encerclée, la créature reste bloquée 2 s ; on l'attrape à 2,6 m, et le bouton « Attraper » passe avant tout.
@@ -71,6 +77,7 @@ Toutes les commandes se lancent depuis la racine du dépôt.
 
 - `node two-supply-droides/tests/partie-complete.test.mjs 777` : partie complète en 20 niveaux, sans navigateur (environ 2 à 3 minutes). Affiche « OK » et crée `tests/fixtures/*.json`. Tester plusieurs graines (11, 42, 2024…).
 - `node two-supply-droides/tests/regles-043.test.mjs` : règles de la 0.4.3 (pannes stock plein, zone des déclassés, adjoint qualité, coéquipier au canapé, générateur). Après la partie complète.
+- `node two-supply-droides/tests/regles-05.test.mjs` : règles de la 0.5 (aménager, pièces lourdes avec 1 ou 2 ingénieurs, tenues des joueurs).
 - `node two-supply-droides/tests/recyclage.test.mjs` : calcul du recyclage.
 - `node two-supply-droides/tests/creatures.mjs` : capture des créatures en solo (objectif : au moins 9 fois sur 10).
 - `node two-supply-droides/tests/droides-coinces.mjs` : droïdes bloqués plus de 5 s (0 attendu en 0.4.3).

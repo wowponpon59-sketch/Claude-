@@ -1,11 +1,11 @@
 // Scène : assemble le monde et le met à jour à partir de l'état du jeu.
-import { Node, mesh, mat, ring } from './gl.js';
-import { PLOTS, MACHINES, ENTREPOT, CORE, PLAYER_COLORS, POST_R, ITEM_ORDER, PAUSE } from './config.js';
-import { NODES, height } from './world.js';
+import { Node, mesh, mat, ring, box } from './gl.js';
+import { PLOTS, MACHINES, ENTREPOT, PART, HEAVY, PLAYER_COLORS, POST_R, ITEM_ORDER, PAUSE } from './config.js';
+import { NODES, height, PLOT_BY_ID } from './world.js';
 import { NODE_TYPES } from './config.js';
 import {
-  buildGround, buildDecor, nodeModel, machineModel, plotModel, entrepotModel, coreModel,
-  workerModel, droidModel, animalModel, itemPile, pauseModel,
+  buildGround, buildDecor, nodeModel, machineModel, plotModel, entrepotModel,
+  workerModel, droidModel, animalModel, itemPile, pauseModel, partModel, lampPostsModel, lampLights, skyModel,
 } from './models.js';
 import { postL, postR, plotUnlocked, pauseSpot } from './sim.js';
 
@@ -16,9 +16,10 @@ function duoRing() {
   const n = mesh(ring(0.45, 0.6, 40), mat(YELLOW, { opacity: 0.9, unlit: 1, cast: false }));
   return n;
 }
+const ENGINEER_RGB = [0.7, 0.4, 1.0];
 function paintRing(r, who, near) {
   const m = r.mesh.mat;
-  if (who) { m.color = PLAYER_COLORS[who].rgb; m.opacity = 0.95; r.scl = [1.1, 1, 1.1]; }
+  if (who) { m.color = PLAYER_COLORS[who] ? PLAYER_COLORS[who].rgb : ENGINEER_RGB; m.opacity = 0.95; r.scl = [1.1, 1, 1.1]; }
   else if (near) { m.color = PLAYER_COLORS[near].rgb; m.opacity = 0.6; r.scl = [1, 1, 1]; }
   else { m.color = YELLOW; m.opacity = 0.9; r.scl = [1, 1, 1]; }
 }
@@ -27,6 +28,10 @@ export function buildScene(mode = 'duo') {
   const root = new Node();
   const S = { root, targets: {}, droids: new Map(), animals: new Map(), plots: {}, machines: {}, nodes: [], rings: {} };
   root.add(buildGround(), buildDecor());
+  S.sky = skyModel();
+  root.add(S.sky);
+  S.lamps = lampPostsModel();
+  root.add(S.lamps);
 
   NODES.forEach((n, i) => {
     const m = nodeModel(n);
@@ -66,14 +71,20 @@ export function buildScene(mode = 'duo') {
     }
   }
 
-  S.core = coreModel();
-  S.core.pos = [CORE.x, height(CORE.x, CORE.z), CORE.z];
-  S.core.cullR = 2.5;
-  root.add(S.core);
-  for (const side of ['L', 'R']) {
-    const r = duoRing();
-    root.add(r);
-    S.rings['core' + side] = r;
+  // Pièces lourdes (dont le cœur d'assembleur), à porter à deux jusqu'à leur chantier
+  S.parts = {};
+  for (const p of PLOTS) {
+    if (!HEAVY[p.type]) continue;
+    const m = partModel(p.type);
+    m.cullR = 2.5; m.visible = false;
+    root.add(m);
+    S.parts[p.id] = m;
+    for (const side of ['L', 'R']) {
+      const r = duoRing();
+      r.visible = false;
+      root.add(r);
+      S.rings[`part:${p.id}:${side}`] = r;
+    }
   }
 
   let B;
@@ -149,12 +160,18 @@ export function updateScene(S, st, view) {
     const x = mine ? view.me.x : p.x, z = mine ? view.me.z : p.z, rot = mine ? view.me.rot : p.rot;
     if (mine && !p.locked) { g.pos[0] = x; g.pos[2] = z; g.pos[1] = groundY(x, z); g.rot[1] = angLerp(g.rot[1], rot, 1 - Math.exp(-view.dt * 18)); g.init = true; }
     else place(g, x, z, rot, k);
+    // Tenues choisies au vestiaire (onglet « Moi »)
+    if (g.setMe) {
+      const me = st.wardrobe && st.wardrobe.me && st.wardrobe.me[id];
+      const sig = JSON.stringify(me || null);
+      if (g.meSig !== sig) { g.setMe(me); g.meSig = sig; }
+    }
     const v = speedOf(g, view.dt);
     walk(g, v, view.time, view.dt);
     const load = Object.values(p.sac).reduce((a, b) => a + b, 0);
     const ps = 0.8 + load * 0.05;
     if (g.parts.pack) g.parts.pack.scl = [ps, ps, ps];
-    const carrying = !st.core.placed && st.core.hand[id];
+    const carrying = Object.values(st.parts || {}).some((c) => !c.placed && c.hand[id]);
     const work = st.work[id];
     if (carrying) { g.parts.arms[0].rot[0] = -1.3; g.parts.arms[1].rot[0] = -1.3; }
     else if (work) {
@@ -173,6 +190,17 @@ export function updateScene(S, st, view) {
     }
   }
 
+  // Aménagement : fantôme vert (place libre) ou rouge à l'endroit proposé
+  if (view.ghost) {
+    if (!S.ghost) { S.ghost = mesh(box(1, 1.4, 1), mat([0.2, 0.9, 0.4], { opacity: 0.35, unlit: 1, cast: false })); S.ghost.cullR = 4; S.root.add(S.ghost); }
+    const def = MACHINES[view.ghost.type];
+    S.ghost.visible = true;
+    S.ghost.pos = [view.ghost.x, 0.05, view.ghost.z];
+    S.ghost.scl = [def.w, 1, def.d];
+    S.ghost.mesh.mat.color = view.ghost.ok ? [0.2, 0.9, 0.4] : [0.95, 0.25, 0.2];
+    S.ghost.mesh.mat.opacity = 0.28 + 0.1 * Math.sin(view.time * 5);
+  } else if (S.ghost) S.ghost.visible = false;
+
   // Débris
   NODES.forEach((n, i) => {
     const frac = st.nodes[i] / NODE_TYPES[n.type].qty;
@@ -185,6 +213,8 @@ export function updateScene(S, st, view) {
   for (const p of PLOTS) {
     const pst = st.plots[p.id], pm = S.plots[p.id], mm = S.machines[p.id];
     const unlocked = plotUnlocked(st, p);
+    // Machine déplacée (aménagement) : le modèle suit
+    pm.pos[0] = mm.pos[0] = p.x; pm.pos[2] = mm.pos[2] = p.z;
     pm.visible = !pst.built;
     mm.visible = pst.built;
     const { ghost, scaffold, body, piles, frame } = pm.parts;
@@ -214,6 +244,7 @@ export function updateScene(S, st, view) {
       r.visible = (unlocked && pst.ready && !pst.built) || heavyM;
       if (!r.visible) continue;
       const pt = side === 'L' ? postL(p) : postR(p);
+      r.pos[0] = pt.x; r.pos[2] = pt.z;
       const who = heavyM ? (side === 'L' ? st.machines[p.id].cut : (['A', 'B'].find((id) => st.work[id] && st.work[id].kind === 'fixheavy' && st.work[id].mach === p.id) || null)) : (side === 'L' ? pst.holder : null);
       const near = ['A', 'B'].find((id) => Math.hypot(st.players[id].x - pt.x, st.players[id].z - pt.z) < POST_R);
       paintRing(r, who, near);
@@ -263,6 +294,22 @@ export function updateScene(S, st, view) {
       else if (m.nopower) { const b = Math.sin(view.time * 4) > 0 ? 0.7 : 0.1; lamp.color = [0.3, 0.4, 0.9]; lamp.emissive = [0.1, 0.2, b]; }
       else { lamp.color = [0.8, 0.6, 0.1]; lamp.emissive = [0.6, 0.4, 0.05]; }
       if (hot && a.tip) a.tip.mesh.mat.emissive = [1.0, 0.2 + 0.1 * Math.sin(view.time * 20), 0.02];
+      // Fumée de cheminée quand elle tourne, étincelles quand elle est en panne
+      if (a.puff) {
+        a.puff.visible = run && !m.broken;
+        if (a.puff.visible) a.puff.children.forEach((s, i) => {
+          const t = (view.time * 0.35 + i / 4) % 1;
+          s.pos = [Math.sin(i * 2.3 + view.time * 0.7) * 0.15 + t * 0.4, t * 2.4, Math.cos(i * 1.7) * 0.15];
+          const sc = 0.5 + t * 1.8; s.scl = [sc, sc, sc];
+          s.mesh.mat.opacity = 0.42 * (1 - t);
+        });
+      }
+      a.sparks.visible = !!m.broken;
+      if (m.broken) a.sparks.children.forEach((s, i) => {
+        const t = (view.time * 1.8 + i * 0.37) % 1, ang = i * 1.9 + Math.floor(view.time * 1.8 + i * 0.37) * 2.1;
+        s.pos = [Math.cos(ang) * t * 0.8, Math.sin(t * Math.PI) * 0.6 - t * 0.3, Math.sin(ang) * t * 0.5];
+        s.visible = t < 0.85;
+      });
       a.smoke.visible = !!(m.broken || hot);
       if (m.broken || hot) a.smoke.children.forEach((s, i) => {
         s.mesh.mat.color = m.broken === 'heavy' || hot ? [0.12, 0.12, 0.12] : [0.35, 0.35, 0.35];
@@ -274,22 +321,26 @@ export function updateScene(S, st, view) {
     }
   }
 
-  // Cœur d'assembleur
-  S.core.visible = !st.core.placed;
-  if (!st.core.placed) {
-    place(S.core, st.core.x, st.core.z, undefined, k);
-    const lifted = st.core.hand.A && st.core.hand.B;
-    S.core.body.pos[1] = lerp(S.core.body.pos[1], lifted ? 0.35 : 0, k);
-  }
-  for (const side of ['L', 'R']) {
-    const r = S.rings['core' + side];
-    r.visible = !st.core.placed;
-    if (!r.visible) continue;
-    const hx = S.core.pos[0] + (side === 'L' ? -1 : 1) * CORE.handle, hz = S.core.pos[2];
-    r.pos = [hx, groundY(hx, hz) + 0.04, hz];
-    const who = ['A', 'B'].find((id) => st.core.hand[id] === side);
-    const near = ['A', 'B'].find((id) => Math.hypot(st.players[id].x - hx, st.players[id].z - hz) < POST_R);
-    paintRing(r, who, near);
+  // Pièces lourdes : visibles quand leur chantier est débloqué, soulevées quand on les porte
+  for (const [pid, m] of Object.entries(S.parts)) {
+    const c = st.parts && st.parts[pid];
+    const out = !!c && !c.placed && plotUnlocked(st, PLOT_BY_ID[pid]) && !st.plots[pid].built;
+    m.visible = out;
+    if (out) {
+      place(m, c.x, c.z, undefined, k);
+      const lifted = (c.hand.A && (c.hand.B || c.hand.E)) || (c.hand.B && c.hand.E) || !!c.eng;
+      m.body.pos[1] = lerp(m.body.pos[1], lifted ? 0.35 : 0, k);
+    }
+    for (const side of ['L', 'R']) {
+      const r = S.rings[`part:${pid}:${side}`];
+      r.visible = out && !c.eng;
+      if (!r.visible) continue;
+      const hx = m.pos[0] + (side === 'L' ? -1 : 1) * PART.handle, hz = m.pos[2];
+      r.pos = [hx, groundY(hx, hz) + 0.04, hz];
+      const who = ['A', 'B'].find((id) => c.hand[id] === side) || (c.hand.E === side ? 'E' : null);
+      const near = ['A', 'B'].find((id) => Math.hypot(st.players[id].x - hx, st.players[id].z - hz) < POST_R);
+      paintRing(r, who, near);
+    }
   }
 
   // Droïdes
@@ -363,7 +414,7 @@ export function updateScene(S, st, view) {
       key = null;
       const c = PLAYER_COLORS[view.myId].rgb, pulse = 0.12 + 0.05 * Math.sin(view.time * 6);
       node.glow([c[0] * pulse, c[1] * pulse, c[2] * pulse]);
-    } else if (/^core[LR]$/.test(key)) key = null, S.core.glow(PLAYER_COLORS[view.myId].rgb.map((v) => v * 0.15));
+    } else if (/^part:/.test(key)) { const m = S.parts[key.split(':')[1]]; key = null; if (m) m.glow(PLAYER_COLORS[view.myId].rgb.map((v) => v * 0.15)); }
     if (key && S.targets[key]) {
       const c = PLAYER_COLORS[view.myId].rgb, pulse = 0.12 + 0.05 * Math.sin(view.time * 6);
       S.targets[key].glow([c[0] * pulse, c[1] * pulse, c[2] * pulse]);
@@ -371,8 +422,36 @@ export function updateScene(S, st, view) {
   }
 }
 
+// ---------- jour et nuit ----------
+// Un cycle complet dure 12 minutes de jeu (environ 2 minutes de nuit), le même sur les deux téléphones.
+const DAY_LEN = 720;
+const DAYC = { sunCol: [1.0, 0.86, 0.68], sky: [0.62, 0.66, 0.70], ground: [0.33, 0.28, 0.24], fog: [0.60, 0.56, 0.52] };
+const DUSK = { sunCol: [1.0, 0.55, 0.32], sky: [0.56, 0.47, 0.52], ground: [0.28, 0.2, 0.18], fog: [0.66, 0.46, 0.38] };
+const NIGHTC = { sunCol: [0.36, 0.42, 0.6], sky: [0.12, 0.15, 0.25], ground: [0.1, 0.1, 0.13], fog: [0.12, 0.14, 0.2] };
+const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+const mix3 = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
+export function dayNight(S, env, t) {
+  const p = (t / DAY_LEN + 0.08) % 1;
+  const night = smooth(0.70, 0.76, p) * (1 - smooth(0.93, 0.99, p));
+  const dusk = Math.min(1, Math.max(0, 1 - Math.abs(p - 0.72) / 0.07) + 0.7 * Math.max(0, 1 - Math.abs(p - 0.97) / 0.04));
+  for (const k of ['sunCol', 'sky', 'ground', 'fog']) env[k] = mix3(mix3(DAYC[k], DUSK[k], dusk), NIGHTC[k], night);
+  // Soleil qui traverse le ciel le jour ; lune haute la nuit
+  const x = Math.min(1, p / 0.74);
+  const el = 0.32 + 0.62 * Math.sin(x * Math.PI), az = 0.2 + 1.2 * x;
+  const sun = [Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)];
+  const moon = [Math.cos(0.95) * Math.cos(2.4), Math.sin(0.95), Math.cos(0.95) * Math.sin(2.4)];
+  const d = mix3(sun, moon, night), l = Math.hypot(...d);
+  env.sun = d.map((v) => -v / l);
+  env.night = night;
+  env.lamps = S.lampPos || (S.lampPos = lampLights());
+  // Lampes qui s'allument au crépuscule
+  const on = Math.max(night, dusk * 0.6);
+  S.lamps.bulb.emissive = [0.1 + 1.1 * on, 0.08 + 0.85 * on, 0.05 + 0.55 * on];
+  env.night = Math.max(night, dusk * 0.35);
+}
+
 // Remet à zéro les surbrillances des machines (elles ne sont pas dans targets)
 export function clearGlow(S) {
   for (const p of PLOTS) { S.plots[p.id].glow(null); S.machines[p.id].glow(null); }
-  S.core.glow(null);
+  for (const m of Object.values(S.parts)) m.glow(null);
 }

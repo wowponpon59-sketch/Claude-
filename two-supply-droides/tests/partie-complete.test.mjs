@@ -5,7 +5,7 @@
 import * as SIM from '../js/sim.js';
 import { createBot, botInput } from '../js/bot.js';
 import { NODES } from '../js/world.js';
-import { PLOTS, NODE_TYPES, ENTREPOT, CORE, MACHINES, RECIPES, LEVELS, T, SAC_MAX, DROIDS, OUTFITS, PACK, ITEMS } from '../js/config.js';
+import { PLOTS, NODE_TYPES, ENTREPOT, CORE, PART, MACHINES, RECIPES, LEVELS, T, SAC_MAX, DROIDS, OUTFITS, PACK, ITEMS } from '../js/config.js';
 import { moveCircle, obstacles } from '../js/move.js';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -73,8 +73,40 @@ function assemble(id) {
   up(); tick();
   assert.ok(S.plots[id].built, 'machine montée avec le coéquipier : ' + id);
 }
+// Pièce lourde ramenée à deux avec le coéquipier IA : le joueur saisit une poignée, le coéquipier l'autre,
+// puis le joueur dirige (passages dans les ruines, petit pas de côté quand ça coince)
+let carried = 0;
+function carryPart(id) {
+  const c = S.parts[id];
+  if (!c || c.placed) return;
+  // Les ingénieurs (à deux) sont déjà en train de la ramener : on les laisse faire
+  const engOn = () => c.eng || S.droids.some((d) => d.task && d.task.part === id);
+  if (engOn()) { let w = 0; while (!c.placed && w++ < 30 * 150) { fuel(); tick(); } assert.ok(c.placed, 'pièce ramenée par les ingénieurs : ' + id); log('pièce lourde ramenée par les ingénieurs :', id); return; }
+  at(c.x - PART.handle - 0.3, c.z);
+  assert.match(label(), /^Saisir/, 'poignée ' + id + ' : ' + label());
+  tap();
+  let g = 0; while (!c.hand.B && g++ < 30 * 40) tick();
+  assert.equal(c.hand.B, 'R', 'le coéquipier prend l’autre poignée : ' + id);
+  g = 0; let side = 0, lx = c.x, lz = c.z, still = 0, turn = 1;
+  const target = PB[id];
+  while (!c.placed && g++ < 30 * 150) {
+    const wp = SIM.partRoute(S, id);
+    const dx = wp.x - c.x, dz = wp.z - c.z, l = Math.hypot(dx, dz) || 1;
+    let mx = dx / l, mz = dz / l;
+    if (side > 0) { side -= dt; [mx, mz] = [-mz * turn, mx * turn]; }
+    A.mx = mx; A.mz = mz; tick();
+    const mv = Math.hypot(c.x - lx, c.z - lz); lx = c.x; lz = c.z;
+    still = mv < 0.01 ? still + dt : 0;
+    if (still > 0.4 && side <= 0) { side = 1.2; turn = -turn; }
+  }
+  A.mx = A.mz = 0;
+  assert.ok(c.placed, 'pièce lourde posée : ' + id + ' (' + c.x.toFixed(1) + ', ' + c.z.toFixed(1) + ')');
+  carried++;
+  log('pièce lourde ramenée :', id);
+}
 function buildPlot(id) {
   if (S.plots[id].built) return;
+  carryPart(id);
   if (!S.plots[id].ready) {
     const cost = MACHINES[PB[id].type].cost;
     for (let tries = 0; tries < 3 && !S.plots[id].ready; tries++) {
@@ -106,7 +138,7 @@ function operate(id, until, max = 120) {
     A.x = f.x; A.z = f.z; tick();
   }
   up(); tick();
-  if (!until()) console.log('DEBUG machine', JSON.stringify(S.machines[id]), 'power', JSON.stringify(S.power), 'label', label());
+  if (!until()) console.log('DEBUG machine', JSON.stringify(S.machines[id]), 'power', JSON.stringify(S.power), 'label', label(), 'suiveurs', JSON.stringify(S.droids.filter((d) => d.st === 'follow').map((d) => ({ id: d.id, type: d.type, who: d.who, made: d.id }))));
   assert.ok(until(), 'production ' + id + ' (' + label() + ')');
 }
 function collect(id) {
@@ -142,7 +174,8 @@ function newDroid() {
   return S.droids[S.droids.length - 1];
 }
 function take(d) {
-  for (let k = 0; k < 3 && d.st !== 'follow'; k++) { at(d.x + 0.6, d.z); if (/Emmener|Reprendre/.test(label())) tap(); else run(0.5); }
+  // on vise ce droïde-là (pas un autre qui passe à côté)
+  for (let k = 0; k < 12 && d.st !== 'follow'; k++) { at(d.x + 0.6, d.z); if (/Emmener|Reprendre/.test(label()) && (S.players.A.hint || {}).key === 'droid' + d.id) tap(); else run(0.3); }
   assert.equal(d.st, 'follow', 'emmener : ' + label());
 }
 const KIT = Object.fromEntries(Object.entries(DROIDS).filter(([, d]) => d.kit).map(([k, d]) => [k, d.kit]));
@@ -263,25 +296,26 @@ function waitLevel(n, max = 30) {
 // ========== NIVEAU 1 ==========
 assert.deepEqual(MACHINES.forge.recipes.filter((r) => Object.keys(RECIPES[r].out)[0].startsWith('k_')), [], 'la forge ne fait pas de kits');
 for (const [k, n] of Object.entries({ argile: 10, calcaire: 5, eau: 2, fer: 5, verre: 4 })) gather(k, n);
-deliver('forge'); assemble('forge');
-deliver('circuits'); assemble('circuits');
-at(CORE.x - CORE.handle - 0.3, CORE.z); tap();
-let g = 0; while (!S.core.hand.B && g++ < 30 * 40) tick();
-assert.equal(S.core.hand.B, 'R', 'le coéquipier prend la caisse');
-g = 0; let side = 0, lx = S.core.x, lz = S.core.z, still = 0;
+carryPart('forge'); deliver('forge'); assemble('forge');
+carryPart('circuits'); deliver('circuits'); assemble('circuits');
+const core = S.parts.assembleur;
+at(core.x - CORE.handle - 0.3, core.z); tap();
+let g = 0; while (!core.hand.B && g++ < 30 * 40) tick();
+assert.equal(core.hand.B, 'R', 'le coéquipier prend la caisse');
+g = 0; let side = 0, lx = core.x, lz = core.z, still = 0;
 const WPS = [{ x: 20, z: -13 }, { x: 4, z: -13.2 }, PB.assembleur]; let wi = 0;
-while (!S.core.placed && g++ < 30 * 120) {
-  if (wi < 2 && Math.hypot(WPS[wi].x - S.core.x, WPS[wi].z - S.core.z) < 1.2) wi++;
-  const t = WPS[wi], dx = t.x - S.core.x, dz = t.z - S.core.z, l = Math.hypot(dx, dz);
+while (!core.placed && g++ < 30 * 120) {
+  if (wi < 2 && Math.hypot(WPS[wi].x - core.x, WPS[wi].z - core.z) < 1.2) wi++;
+  const t = WPS[wi], dx = t.x - core.x, dz = t.z - core.z, l = Math.hypot(dx, dz);
   let mx = dx / l, mz = dz / l;
   if (side > 0) { side -= dt; [mx, mz] = [-mz, mx]; }
   A.mx = mx; A.mz = mz; tick();
-  const mv = Math.hypot(S.core.x - lx, S.core.z - lz); lx = S.core.x; lz = S.core.z;
+  const mv = Math.hypot(core.x - lx, core.z - lz); lx = core.x; lz = core.z;
   still = mv < 0.01 ? still + dt : 0;
   if (still > 0.4 && side <= 0) side = 1.2;
 }
 A.mx = A.mz = 0;
-assert.ok(S.core.placed, 'cœur posé');
+assert.ok(core.placed, 'cœur posé');
 gather('fer', 4); gather('verre', 2);
 deliver('assembleur'); assemble('assembleur');
 gather('fer', 2); gather('eau', 1); gather('verre', 1); gather('calcaire', 1);
@@ -390,10 +424,12 @@ waitLevel(9);
 // ========== NIVEAU 9 : métallurgie ==========
 for (const [k, n] of Object.entries(MACHINES.fonderie.cost)) add(k, n + 2);
 for (const [k, n] of Object.entries(MACHINES.laminoir.cost)) add(k, n + 2);
-const di = S.droids.find((d) => d.type === 'ingenieur');
-g = 0; while (!(S.machines.fonderie && S.machines.laminoir) && g++ < 30 * 120) tick();
-assert.ok(S.machines.fonderie && S.machines.laminoir, 'l’ingénieur a construit fonderie et laminoir');
-log('ingénieur : fonderie et laminoir construits seuls');
+// Un seul ingénieur ne monte pas une machine tout seul : avec un deuxième, ils vont chercher les pièces lourdes et montent à deux
+train('ingenieur');
+assert.equal(S.droids.filter((d) => d.type === 'ingenieur').length, 2, 'deux ingénieurs');
+{ const t0 = S.time; g = 0; while (!(S.machines.fonderie && S.machines.laminoir) && g++ < 30 * 400) { fuel(); tick(); } log('deux ingénieurs : fonderie et laminoir en', Math.round(S.time - t0), 's'); }
+assert.ok(S.parts.fonderie.placed && S.parts.laminoir.placed, 'pièces lourdes ramenées par les ingénieurs');
+assert.ok(S.machines.fonderie && S.machines.laminoir, 'les deux ingénieurs ont construit fonderie et laminoir');
 const fr = SIM.machineRecipes(S, S.machines.forge);
 assert.deepEqual(fr, ['carcasse', 'carcasseT', 'carcasseL'], 'recettes de carcasse au choix : ' + fr);
 make('fonderie', 'lingot', 2); collect('fonderie');
@@ -404,11 +440,11 @@ waitLevel(10);
 const earned10 = S.stats.earned;
 
 // ========== NIVEAU 10 (rodage) : vestiaire et packs ==========
-const cr = S.credits;
+const cr = S.credits, ea = S.stats.earned;
 cmd({ c: 'buy', type: 'maintenance', outfit: 'casquette' });
 cmd({ c: 'buy', type: 'maintenance', outfit: 'tablier' });
 assert.deepEqual(S.wardrobe.wear.maintenance, { tete: 'casquette', corps: 'tablier' }, 'tenues cumulées');
-assert.equal(S.credits, cr - 85);
+assert.equal(S.credits, cr - 85 + (S.stats.earned - ea), 'casquette + tablier = 85 crédits');
 cmd({ c: 'wear', type: 'maintenance', outfit: 'tablier' });
 assert.deepEqual(S.wardrobe.wear.maintenance, { tete: 'casquette' }, 'tablier retiré');
 const pp = SIM.packPrice(S, 'maintenance');
@@ -503,6 +539,7 @@ assert.ok(SIM.qcActive(S), 'contrôle qualité actif');
 const d0 = Object.keys(S.stats.made).filter((k) => k.endsWith('_d')).reduce((a, k) => a + S.stats.made[k], 0);
 const declN = () => Object.keys(S.stats.made).filter((k) => k.endsWith('_d')).reduce((a, k) => a + S.stats.made[k], 0);
 S.stock.circuit = Math.min(S.stock.circuit || 0, 4);
+for (const m of Object.values(S.machines)) delete m.out.circuit;
 for (let k = 0; k < 4 && declN() === d0; k++) { make('circuits', 'circuit', 12); collect('circuits'); }
 const d1 = declN();
 log('déclassées sur 12 circuits :', d1 - d0);

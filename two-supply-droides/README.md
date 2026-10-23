@@ -1,10 +1,18 @@
-# Two Supply — Droïdes (version 0.4.3)
+# Two Supply — Droïdes (version 0.5)
 
 Usine de droïdes dans un terrain vague, en 20 niveaux, en solo (avec un coéquipier IA) ou à deux téléphones.
 
 **Jouer :** `https://wowponpon59-sketch.github.io/Claude-/two-supply-droides/`
 
 Les versions 0.2 et 0.3 restent dans l’historique Git. La version 0.1 (pain) est dans `two-supply/`.
+
+## Nouveautés de la 0.5
+
+- **Pièces lourdes** : chaque vraie machine (pas la zone des déclassés ni le quai) a sa pièce lourde, posée dans le terrain vague à une place différente à chaque partie, à ramener à deux avant le montage, comme le cœur d’assembleur. Les petits débris (rochers, fûts) ne bloquent plus quand on porte à deux.
+- **Ingénieurs** : un ingénieur seul livre les matériaux et tient la pièce, mais il faut un joueur pour visser. Avec deux ingénieurs, ils vont chercher la pièce lourde, livrent et montent la machine tout seuls. À deux téléphones, si tu tiens une pièce seul et que ton partenaire est loin, un ingénieur vient prendre l’autre poignée.
+- **Aménager** (panneau Usine) : on choisit une machine, on marche jusqu’au nouvel emplacement sur la dalle (fantôme vert ou rouge), puis « Poser ici ». Elle garde son contenu, ses créatures et son opérateur.
+- **Vestiaire › Moi** : chaque joueur habille son personnage (casquette, casque, lunettes de soudeur, casque audio, nœud papillon, écharpe, tablier, gilet fluo, sac à dos, cape, gants), avec 10 couleurs au choix.
+- **Graphismes** : ciel avec soleil et nuages, cycle jour et nuit (12 minutes, dont environ 2 de nuit, étoiles), lampadaires qui éclairent la nuit, métal brossé, boulons, tuyaux, pupitres de commande et marquages sur les machines, fumée des cheminées quand elles tournent, étincelles en cas de panne, allées jaunes et flaques sur la dalle, herbes et fleurs dans le terrain vague. Le nombre d’objets dessinés reste celui de la 0.4.3.
 
 ## Nouveautés de la 0.4.3
 
@@ -80,4 +88,4 @@ Deux onglets sur le même ordinateur : ajouter `?net=fake` à l’adresse.
 
 ## Tests
 
-Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.
+Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3 et de la 0.5, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.

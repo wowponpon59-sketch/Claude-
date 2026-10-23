@@ -1,7 +1,7 @@
 // Génération du terrain vague : relief, débris à fouiller, décor, obstacles.
 // La carte dépend d'une graine tirée à chaque nouvelle partie ; les deux téléphones
 // reçoivent la même graine et construisent donc exactement le même monde.
-import { WORLD, SLAB, NODE_TYPES, NODE_MIX, PLOTS, MACHINES, ENTREPOT, CORE, PAUSE } from './config.js';
+import { WORLD, SLAB, NODE_TYPES, NODE_MIX, PLOTS, MACHINES, ENTREPOT, CORE, PAUSE, HEAVY, LAMP_POSTS } from './config.js';
 
 export function rng(seed) {
   let a = seed >>> 0;
@@ -67,6 +67,8 @@ const gateDist = (x, z) => Math.min(...GATES.map((g) => Math.hypot(x - g.out.x, 
 export const NODES = [];
 export const PROPS = [];
 export const STATIC_OBS = [];
+// Emplacements de départ des pièces lourdes (une par chantier de vraie machine), tirés avec la graine
+export const PART_SPOTS = {};
 export let SEED = 0;
 
 // ---------- ruines de l'usine (sur les bords de la dalle) ----------
@@ -86,6 +88,7 @@ export const RUINS = [
 export function genWorld(seed) {
   SEED = seed >>> 0;
   NODES.length = 0; PROPS.length = 0; STATIC_OBS.length = 0;
+  for (const k of Object.keys(PART_SPOTS)) delete PART_SPOTS[k];
   const R = rng(SEED);
   const taken = [];
   const free = (x, z, r) => {
@@ -179,10 +182,71 @@ export function genWorld(seed) {
   STATIC_OBS.push({ x: PAUSE.x, z: PAUSE.z, w: 2.2, d: 2.9 });
   STATIC_OBS.push({ x: PAUSE.x, z: PAUSE.z - 1.85, w: 1.1, d: 0.5 });
   STATIC_OBS.push({ c: true, x: PAUSE.x - 1.3, z: PAUSE.z + 1.75, r: 0.3 });
+  for (const [x, z] of LAMP_POSTS) STATIC_OBS.push({ c: true, x, z, r: 0.2 });
+
+  // Pièces lourdes : dans le terrain vague, plus loin pour les machines des derniers niveaux,
+  // sur une place dégagée et sans mur entre elles et la dalle (pour les porter à deux)
+  const Q = rng(SEED ^ 0x51ed27);
+  const spots = [{ x: CORE.x, z: CORE.z }];
+  const clearAround = (x, z) => STATIC_OBS.every((o) => (o.c ? Math.hypot(o.x - x, o.z - z) > o.r + 2.6 : Math.abs(o.x - x) > o.w / 2 + 2.6 || Math.abs(o.z - z) > o.d / 2 + 2.6));
+  const wallFree = (x, z) => {
+    const ex = Math.max(SLAB.x0 + 1, Math.min(SLAB.x1 - 1, x)), ez = Math.max(SLAB.z0 + 1, Math.min(SLAB.z1 - 1, z));
+    for (let t = 0; t <= 1; t += 0.05) {
+      const px = x + (ex - x) * t, pz = z + (ez - z) * t;
+      if (RUINS.some((w) => (w.kind === 'wall' ? Math.abs(w.x - px) < w.w / 2 + 2.2 && Math.abs(w.z - pz) < w.d / 2 + 2.2 : Math.hypot(w.x - px, w.z - pz) < w.r + 2.2))) return false;
+    }
+    return true;
+  };
+  for (const p of PLOTS) {
+    if (!HEAVY[p.type] || p.type === 'assembleur') continue;
+    const far = p.level <= 2 ? [4.5, 8] : [5, 13];
+    let best = null;
+    for (let g = 0; g < 600 && !best; g++) {
+      const a = Q() * Math.PI * 2, d = far[0] + Q() * (far[1] - far[0]);
+      const cx = Math.max(SLAB.x0, Math.min(SLAB.x1, Math.cos(a) * 60)), cz = Math.max(SLAB.z0, Math.min(SLAB.z1, Math.sin(a) * 60));
+      const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+      if (Math.abs(x) > WORLD.half - 4 || Math.abs(z) > WORLD.half - 4 || slabDist(x, z) < far[0] - 0.5) continue;
+      if (gateDist(x, z) < 4 || Math.hypot(x - POND.x, z - POND.z) < POND.r + 3) continue;
+      if (spots.some((q) => Math.hypot(q.x - x, q.z - z) < 4.5) || !clearAround(x, z) || !wallFree(x, z)) continue;
+      best = { x, z };
+    }
+    // Rien de libre (très rare) : à côté de l'usine, côté est
+    if (!best) best = { x: SLAB.x1 + 4 + (spots.length % 4) * 0.5, z: SLAB.z0 + 3 + spots.length * 2.2 };
+    spots.push(best);
+    PART_SPOTS[p.id] = best;
+  }
 }
 
 export function plotBox(p) { const m = MACHINES[p.type]; return { x: p.x, z: p.z, w: m.w, d: m.d }; }
 export const PLOT_BY_ID = Object.fromEntries(PLOTS.map((p) => [p.id, p]));
+
+// ---------- aménagement : les machines peuvent être déplacées sur la dalle ----------
+// Les emplacements d'origine restent dans x0/z0 ; S.layout garde ceux choisis par les joueurs.
+for (const p of PLOTS) { p.x0 = p.x; p.z0 = p.z; }
+export function applyLayout(S) {
+  for (const p of PLOTS) {
+    const o = S && S.layout && S.layout[p.id];
+    p.x = o ? o.x : p.x0; p.z = o ? o.z : p.z0;
+  }
+}
+const overlap = (a, b, m) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 + m && Math.abs(a.z - b.z) < (a.d + b.d) / 2 + m;
+// Peut-on poser cette machine ici ? Renvoie null si oui, sinon la raison.
+export function placeWhy(S, id, x, z) {
+  const p = PLOT_BY_ID[id];
+  if (!p || !Number.isFinite(x) || !Number.isFinite(z)) return 'emplacement invalide';
+  const m = MACHINES[p.type];
+  const box = { x, z, w: m.w, d: m.d };
+  // Place pour les postes à deux (gauche, droite) et le devant de la machine
+  if (x - m.w / 2 - 1.3 < SLAB.x0 + 0.3 || x + m.w / 2 + 1.3 > SLAB.x1 - 0.3 || z - m.d / 2 - 0.6 < SLAB.z0 + 0.4 || z + m.d / 2 + 1.4 > SLAB.z1 - 0.3) return 'trop près du bord de la dalle';
+  for (const q of PLOTS) if (q.id !== id && overlap(box, plotBox(q), 1.2)) return 'trop près : ' + MACHINES[q.type].name.toLowerCase();
+  if (overlap(box, ENTREPOT, 1.4)) return 'trop près de l’entrepôt';
+  if (overlap(box, { x: PAUSE.x, z: PAUSE.z - 0.4, w: 3.4, d: 4.6 }, 1.0)) return 'trop près du coin pause';
+  for (const g of GATES) if (Math.abs(g.in.x - x) < m.w / 2 + 1.2 && Math.abs(g.in.z - z) < m.d / 2 + 1.2) return 'devant un passage des ruines';
+  for (const w of RUINS) if (w.kind === 'wall' && overlap(box, w, 0.8)) return 'contre un mur';
+  for (const [lx, lz] of LAMP_POSTS) if (Math.abs(lx - x) < m.w / 2 + 1.4 && Math.abs(lz - z) < m.d / 2 + 1.0) return 'contre un lampadaire';
+  for (const pl of Object.values((S && S.players) || {})) if (Math.abs(pl.x - x) < m.w / 2 + 0.5 && Math.abs(pl.z - z) < m.d / 2 + 0.5) return 'quelqu’un est sur la place';
+  return null;
+}
 
 // Points de départ des créatures
 export const ANIMAL_HOMES = [

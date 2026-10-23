@@ -266,8 +266,8 @@ export class Node {
 }
 
 // Patterns : 0 uni, 1 béton, 2 terre, 3 rouille, 4 verre, 5 métal peint usé, 6 roche, 7 argile,
-// 8 eau, 9 bois, 10 caoutchouc, 11 bandes de danger
-export const P = { plain: 0, concrete: 1, ground: 2, rust: 3, glass: 4, paint: 5, rock: 6, clay: 7, water: 8, wood: 9, rubber: 10, hazard: 11 };
+// 8 eau, 9 bois, 10 caoutchouc, 11 bandes de danger, 12 métal brossé, 13 ciel
+export const P = { plain: 0, concrete: 1, ground: 2, rust: 3, glass: 4, paint: 5, rock: 6, clay: 7, water: 8, wood: 9, rubber: 10, hazard: 11, metal: 12, sky: 13 };
 export function mat(color, o = {}) {
   return {
     color, emissive: o.emissive || [0, 0, 0], opacity: o.opacity ?? 1, pattern: o.pattern || 0,
@@ -292,6 +292,7 @@ uniform vec3 uColor; uniform vec3 uEmissive; uniform vec3 uSun; uniform vec3 uSu
 uniform vec3 uFog; uniform vec3 uCam; uniform vec2 uFogRange;
 uniform float uOpacity; uniform float uPattern; uniform float uUnlit; uniform float uRough; uniform float uTime;
 uniform float uShadowOn; uniform float uTexel; uniform sampler2D uShadow;
+uniform vec3 uLights[8]; uniform vec3 uLightCol; uniform float uLightK; uniform float uNight;
 float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
@@ -358,9 +359,30 @@ void main(){
     rough = 0.9;
   } else if (uPattern > 9.5 && uPattern < 10.5) {
     base *= 0.85 + 0.2 * vn(uv * 9.0); spec = 0.03; rough = 0.95;
-  } else if (uPattern > 10.5) {
+  } else if (uPattern > 10.5 && uPattern < 11.5) {
     float s = step(0.5, fract((vL.x + vL.z + vL.y) * 1.7));
     base = lin(mix(vec3(0.96, 0.75, 0.05), vec3(0.08, 0.08, 0.09), s));
+  } else if (uPattern > 11.5 && uPattern < 12.5) {
+    // Métal brossé : fines rayures dans un sens, un peu de reflet
+    float br = vn(vec2(uv.x * 60.0, uv.y * 1.2)) * 0.6 + vn(vec2(uv.x * 140.0, uv.y * 2.0)) * 0.4;
+    base *= 0.82 + 0.3 * br;
+    base = mix(base, base * 0.7, smoothstep(0.6, 0.9, fbm(uv * 1.5 + 2.0)) * 0.5);
+    spec = 0.35; rough = 0.3;
+  } else if (uPattern > 12.5) {
+    // Ciel : dégradé, soleil (ou lune) et nuages ; étoiles la nuit (pas de brouillard)
+    vec3 dir = normalize(vW - uCam);
+    float hgt = clamp(dir.y, -0.1, 1.0);
+    vec3 sky = mix(lin(uFog), lin(uSky) * 0.85, smoothstep(0.0, 0.45, hgt));
+    float sd = max(dot(dir, -uSun), 0.0);
+    sky += lin(uSunCol) * (pow(sd, 900.0) * 6.0 + pow(sd, 12.0) * 0.25);
+    vec2 cp = dir.xz / max(dir.y + 0.12, 0.05) * 1.6 + vec2(uTime * 0.01, 0.0);
+    float cl = smoothstep(0.5, 0.82, fbm(cp)) * smoothstep(0.02, 0.25, hgt);
+    sky = mix(sky, mix(lin(vec3(0.92, 0.9, 0.86)), lin(vec3(0.16, 0.18, 0.26)), uNight), cl * 0.75);
+    float st = step(0.996, h21(floor(dir.xz / max(dir.y, 0.05) * 90.0))) * smoothstep(0.1, 0.4, hgt);
+    sky += vec3(st) * uNight * 0.9;
+    vec3 c2 = (sky * (2.51 * sky + 0.03)) / (sky * (2.43 * sky + 0.59) + 0.14);
+    gl_FragColor = vec4(sqrt(clamp(c2, 0.0, 1.0)), 1.0);
+    return;
   }
   vec3 col;
   if (uUnlit > 0.5) col = base;
@@ -372,6 +394,17 @@ void main(){
     vec3 v = normalize(uCam - vW), h = normalize(v - uSun);
     float sp = pow(max(dot(n, h), 0.0), mix(90.0, 6.0, rough)) * spec * 5.0 * sh;
     col = base * (amb + d * lin(uSunCol) * 1.45) + sp * lin(uSunCol);
+    // Lampadaires (la nuit) : lumière chaude autour de chaque lampe
+    if (uLightK > 0.01) {
+      vec3 acc = vec3(0.0);
+      for (int i = 0; i < 8; i++) {
+        vec3 dl = uLights[i] - vW;
+        float r2 = dot(dl, dl);
+        float att = 1.0 / (1.0 + r2 * 0.09) * (1.0 - smoothstep(90.0, 160.0, r2));
+        acc += att * (0.35 + 0.65 * max(dot(n, normalize(dl)), 0.0));
+      }
+      col += base * lin(uLightCol) * acc * uLightK * 3.0;
+    }
   }
   col += lin(uEmissive) * 1.6;
   float f = smoothstep(uFogRange.x, uFogRange.y, length(uCam - vW));
@@ -398,7 +431,7 @@ export class Renderer {
     const gl = canvas.getContext('webgl', { antialias: true, alpha: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('WebGL indisponible');
     this.gl = gl;
-    this.prog = this.program(VS, FS, ['uModel', 'uVP', 'uNrm', 'uShadowVP', 'uScale', 'uColor', 'uEmissive', 'uSun', 'uSunCol', 'uSky', 'uGround', 'uFog', 'uCam', 'uFogRange', 'uOpacity', 'uPattern', 'uUnlit', 'uRough', 'uTime', 'uShadowOn', 'uTexel', 'uShadow']);
+    this.prog = this.program(VS, FS, ['uModel', 'uVP', 'uNrm', 'uShadowVP', 'uScale', 'uColor', 'uEmissive', 'uSun', 'uSunCol', 'uSky', 'uGround', 'uFog', 'uCam', 'uFogRange', 'uOpacity', 'uPattern', 'uUnlit', 'uRough', 'uTime', 'uShadowOn', 'uTexel', 'uShadow', 'uLights', 'uLightCol', 'uLightK', 'uNight']);
     this.depth = this.program(VS_D, FS_D, ['uModel', 'uVP']);
     this.cache = new WeakMap();
     this.env = {
@@ -408,7 +441,11 @@ export class Renderer {
       ground: [0.33, 0.28, 0.24],
       fog: [0.60, 0.56, 0.52],
       fogRange: [30, 75],
+      night: 0,                      // 0 le jour, 1 en pleine nuit
+      lamps: [],                     // positions des lampadaires [x, y, z]
+      lampCol: [1.0, 0.78, 0.48],
     };
+    this.lightBuf = new Float32Array(24);
     this.vp = m4.ident(); this.cam = [0, 10, 10]; this.target = [0, 0, 0];
     this.nm = new Float32Array(9);
     this.time = 0;
@@ -565,6 +602,16 @@ export class Renderer {
     gl.uniform2fv(u.uFogRange, e.fogRange);
     gl.uniform1f(u.uTime, this.time);
     gl.uniform1f(u.uShadowOn, this.shadows ? 1 : 0);
+    // Les 8 lampadaires les plus proches de la caméra éclairent la nuit
+    const lk = e.night * (e.lamps.length ? 1 : 0);
+    if (lk > 0.01) {
+      const near8 = e.lamps.slice().sort((a, b) => Math.hypot(a[0] - tg[0], a[2] - tg[2]) - Math.hypot(b[0] - tg[0], b[2] - tg[2])).slice(0, 8);
+      this.lightBuf.fill(0); for (let i = 0; i < 8; i++) { const l = near8[i] || [0, -999, 0]; this.lightBuf.set(l, i * 3); }
+      gl.uniform3fv(u.uLights, this.lightBuf);
+    }
+    gl.uniform3fv(u.uLightCol, e.lampCol);
+    gl.uniform1f(u.uLightK, lk);
+    gl.uniform1f(u.uNight, e.night);
     gl.uniform1f(u.uTexel, 1 / this.shadowSize);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex);

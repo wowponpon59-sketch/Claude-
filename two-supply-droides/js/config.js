@@ -1,7 +1,7 @@
-// Two Supply — Droïdes (version 0.4.3)
+// Two Supply — Droïdes (version 0.5)
 // Repère : x vers l'est, z vers le sud, y vers le haut. Unité : mètre.
 
-export const VERSION = '0.4.3';
+export const VERSION = '0.5';
 export const SAVE_KEY = 'twosupply-droides-save-v04';
 
 export const WORLD = { half: 40 };
@@ -227,6 +227,21 @@ export const START = { A: { x: -1.2, z: 2.4 }, B: { x: 1.2, z: 2.8 } };
 // Coin pause, à côté de l'entrepôt : les droïdes spécialisés sans tâche y prennent un café
 export const PAUSE = { x: 4.4, z: -0.6 };
 export const CORE = { x: 32, z: -27, w: 1.8, d: 1.3, handle: 1.45 };
+// Lampadaires autour de la dalle (ils éclairent la nuit)
+export const LAMP_POSTS = [[-21, -13.8], [-21, -4.5], [-21, 6], [-21.2, 15.2], [-9, -14.4], [8, -14.4], [21, -12], [21, 1.5], [21.2, 15.2], [-6.5, 15.3], [12, 15.3]];
+// Pièces lourdes : chaque vraie machine a la sienne, posée dans le terrain vague (place différente à chaque partie),
+// à ramener à deux (joueurs, ou deux ingénieurs) avant le montage. Le cœur d'assembleur est celle de l'assembleur.
+export const PART = { w: CORE.w, d: CORE.d, handle: CORE.handle };
+export const HEAVY = {
+  assembleur: { name: 'Cœur d’assembleur', col: [0.2, 0.8, 0.9] }, forge: { name: 'Enclume de la forge', col: [0.75, 0.32, 0.18] },
+  circuits: { name: 'Banc de soudure', col: [0.2, 0.7, 0.4] }, etabli: { name: 'Étau géant', col: [0.55, 0.42, 0.3] },
+  atelier: { name: 'Bras de montage', col: [0.6, 0.3, 0.9] }, ceramique: { name: 'Cuve en céramique', col: [0.85, 0.55, 0.4] },
+  generateur: { name: 'Turbine du générateur', col: [0.25, 0.6, 0.35] }, trefileuse: { name: 'Bobine de tréfilage', col: [0.9, 0.55, 0.2] },
+  fonderie: { name: 'Creuset de la fonderie', col: [0.9, 0.35, 0.1] }, laminoir: { name: 'Cylindres du laminoir', col: [0.7, 0.72, 0.78] },
+  qualite: { name: 'Scanner de contrôle', col: [0.9, 0.9, 0.95] }, recycleur: { name: 'Broyeur du recycleur', col: [0.35, 0.55, 0.35] },
+  four: { name: 'Voûte du four à verre', col: [0.85, 0.75, 0.5] }, emballeuse: { name: 'Plieuse à cartons', col: [0.8, 0.62, 0.38] },
+};
+export const needsPart = (type) => !!HEAVY[type];
 
 // ---------- droïdes : de l'ouvrier au chef de production ----------
 // work : 'machine' (affecté à une machine) ou 'hq' (mis au travail à l'entrepôt) ; lvl : niveau (index) où le métier se débloque
@@ -261,6 +276,25 @@ export const OUTFITS = {
 };
 // « L'intégrale » : les 5 vêtements d'un métier (sans les peintures), à partir du niveau 10
 export const PACK = { name: 'L’intégrale', items: ['casquette', 'tablier', 'casque', 'gilet', 'noeud'], price: 205, lvl: 9 };
+// Tenues des joueurs (onglet « Moi » du vestiaire) : achetées une fois avec les crédits, couleur au choix, cumulables (une par emplacement)
+export const ME_SLOTS = { tete: 'Tête', yeux: 'Yeux', oreilles: 'Oreilles', cou: 'Cou', corps: 'Corps', dos: 'Dos', mains: 'Mains' };
+export const ME_OUTFITS = {
+  casquette: { name: 'Casquette', slot: 'tete', price: 40 },
+  casque: { name: 'Casque de chantier', slot: 'tete', price: 55 },
+  lunettes: { name: 'Lunettes de soudeur', slot: 'yeux', price: 50 },
+  audio: { name: 'Casque audio', slot: 'oreilles', price: 60 },
+  noeud: { name: 'Nœud papillon', slot: 'cou', price: 45 },
+  echarpe: { name: 'Écharpe', slot: 'cou', price: 45 },
+  tablier: { name: 'Tablier', slot: 'corps', price: 45 },
+  gilet: { name: 'Gilet fluo', slot: 'corps', price: 60 },
+  sac: { name: 'Sac à dos à outils', slot: 'dos', price: 70 },
+  cape: { name: 'Cape', slot: 'dos', price: 90 },
+  gants: { name: 'Gants', slot: 'mains', price: 35 },
+};
+export const ME_COLORS = ['#e23b3b', '#f7822a', '#f2c14e', '#3fb950', '#22c3b4', '#3a86f0', '#8a4be0', '#ff6fb1', '#f2f2f2', '#2a2a2a'];
+// Couleur proposée au premier achat
+export const ME_DEFAULT_COL = { casquette: 0, casque: 2, lunettes: 9, audio: 9, noeud: 0, echarpe: 6, tablier: 9, gilet: 1, sac: 3, cape: 6, gants: 2 };
+
 // Couleurs et style de chaque métier : casquette, casque, tablier, gilet (+ bandes), nœud
 export const LOOKS = {
   logistique: { casquette: '#2f6fe0', casque: '#2f6fe0', tablier: '#6b7380', gilet: '#ff8a1f', bande: '#2f6fe0', noeud: '#2f6fe0', style: 'gilet orange fluo à bandes bleues' },

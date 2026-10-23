@@ -1,6 +1,6 @@
 // Coéquipier piloté par l'ordinateur (mode solo) : il attend au coin pause, sur le canapé,
 // et vient se placer de l'autre côté dès qu'une tâche demande deux personnes (ou quand on l'appelle).
-import { POST_R, CORE, SPEED, PLOTS, WORLD } from './config.js';
+import { POST_R, PART, SPEED, PLOTS, WORLD } from './config.js';
 import { postL, postR, pauseSpot, sofaEnd } from './sim.js';
 import { obstacles, steer } from './move.js';
 
@@ -19,7 +19,8 @@ export function botInput(S, bot, dt, aIn) {
   let goal = null, hold = false, tapNow = false, mirror = null, why = 'suit';
   const nearPost = (pt) => dist(A, pt) <= POST_R + 0.3;
 
-  const c = S.core;
+  // Pièce lourde (cœur d'assembleur ou autre) qu'un des deux tient
+  const c = Object.values(S.parts).find((q) => !q.placed && (q.hand.A || q.hand.B)) || null;
   const readyPlot = PLOTS.find((p) => {
     const st = S.plots[p.id];
     return st.ready && !st.built && (nearPost(postL(p)) || nearPost(postR(p)));
@@ -39,14 +40,14 @@ export function botInput(S, bot, dt, aIn) {
   }
   bot.prey = hunting ? hunting.id : null;
 
-  if (!c.placed && (c.hand.A || c.hand.B)) {
+  if (c) {
     why = 'caisse';
     if (c.hand.B) {
       if (c.hand.A) mirror = { mx: aIn.mx || 0, mz: aIn.mz || 0 };
       else tapNow = true; // le joueur a lâché : on lâche aussi
     } else {
       const side = c.hand.A === 'L' ? 'R' : 'L';
-      goal = { x: c.x + (side === 'L' ? -1 : 1) * CORE.handle, z: c.z };
+      goal = { x: c.x + (side === 'L' ? -1 : 1) * PART.handle, z: c.z };
       if (dist(bot.ent, goal) < 0.5) tapNow = true;
     }
   } else if (heavy) {
@@ -133,5 +134,5 @@ export function botInput(S, bot, dt, aIn) {
 
 export function botLabel(bot) {
   if (bot.why === 'pause') return bot.seated ? 'en pause café' : 'va au coin pause';
-  return { caisse: 'porte la caisse', montage: 'monte avec toi', panne: 'répare la panne avec toi', créature: 'prend la créature à revers', appel: 'te rejoint' }[bot.why] || '';
+  return { caisse: 'porte la pièce lourde', montage: 'monte avec toi', panne: 'répare la panne avec toi', créature: 'prend la créature à revers', appel: 'te rejoint' }[bot.why] || '';
 }

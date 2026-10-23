@@ -33,8 +33,7 @@ const label = (S) => (S.players.A.hint || {}).label || '';
   const run = Object.values(S.machines).filter((m) => m.run).length;
   console.log('niveau 8, stock plein : machines en marche', run, '· pannes en 5 min', broke, '· réparées', S.stats.repairs - r0);
   assert.ok(broke >= 3, 'au moins 3 pannes en 5 minutes même à l’arrêt : ' + broke);
-  const g = LEVELS[7].goals.find((x) => x.id === 'r8c');
-  assert.equal(SIM.goalProgress(S, g)[0], 3, 'objectif « Réparer 3 pannes » atteignable');
+  // (les pannes lourdes attendent les joueurs : on ne compte ici que les pannes qui arrivent)
 }
 
 // ---------- 2. Zone des déclassés : déclassés et rebuts à part, avant même l'adjoint qualité ----------

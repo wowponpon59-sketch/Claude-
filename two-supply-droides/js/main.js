@@ -2,10 +2,10 @@
 import { newState, restoreState, step, drainFx, forceBuild, commandsOnly } from './sim.js';
 import { createBot, botInput, botLabel } from './bot.js';
 import { obstacles, moveCircle } from './move.js';
-import { SPEED, LEVELS, SAVE_KEY, T, other } from './config.js';
-import { height, genWorld } from './world.js';
+import { SPEED, LEVELS, SAVE_KEY, T, other, MACHINES } from './config.js';
+import { height, genWorld, applyLayout, placeWhy, PLOT_BY_ID } from './world.js';
 import { Renderer } from './gl.js';
-import { buildScene, updateScene } from './scene.js';
+import { buildScene, updateScene, dayNight } from './scene.js';
 import { Link, getPeerClass, cleanCode } from './net.js';
 import * as UI from './ui.js';
 import { unlockAudio, play } from './audio.js';
@@ -239,7 +239,7 @@ function beginGame(resumed) {
 }
 
 // ---------- messages réseau ----------
-const CMDS = new Set(['spec', 'take', 'put', 'putall', 'request', 'recipes', 'buy', 'wear', 'pack', 'ztake', 'zput', 'zputall', 'trash']);
+const CMDS = new Set(['spec', 'take', 'put', 'putall', 'request', 'recipes', 'buy', 'wear', 'pack', 'ztake', 'zput', 'zputall', 'trash', 'move', 'mebuy', 'mewear', 'mecol']);
 function hostMessage(m) {
   if (!m || typeof m !== 'object') return;
   const r = app.remote;
@@ -255,6 +255,7 @@ function hostMessage(m) {
       const e = { c: m.c };
       for (const k of ['type', 'item', 'mach', 'outfit', 'slot']) if (typeof m[k] === 'string' || m[k] === null) e[k] = m[k];
       if (Number.isFinite(m.n)) e.n = m.n;
+      for (const k of ['x', 'z']) if (Number.isFinite(m[k])) e[k] = m[k];
       if (typeof m.on === 'boolean') e.on = m.on;
       if (Array.isArray(m.sel)) e.sel = m.sel.filter((x) => typeof x === 'string').slice(0, 12);
       r.events.push(e);
@@ -282,6 +283,34 @@ function sendCmd(e) {
   else if (app.link) app.link.send({ t: 'cmd', ...e });
   play('tap');
 }
+// Panneau Usine : « Déplacer » lance le mode Aménager (sur ce téléphone), le reste part à la simulation
+function usineSend(e) {
+  if (e.c !== 'place') { sendCmd(e); return; }
+  if (!app.st.machines[e.mach]) return;
+  app.placing = { mach: e.mach, x: 0, z: 0, why: '…' };
+  UI.overlay('screen-usine', false);
+  $('place-bar').hidden = false;
+  play('tap');
+}
+function stopPlacing() { app.placing = null; $('place-bar').hidden = true; }
+// Emplacement proposé : devant le joueur, à la grille de 50 cm
+function updatePlacing(st, me) {
+  const pl = app.placing;
+  if (!pl) return null;
+  if (!st.machines[pl.mach]) { stopPlacing(); return null; }
+  const def = MACHINES[PLOT_BY_ID[pl.mach].type];
+  const ahead = def.d / 2 + 1.6;
+  pl.x = Math.round((me.x + Math.sin(me.rot) * ahead) * 2) / 2;
+  pl.z = Math.round((me.z + Math.cos(me.rot) * ahead) * 2) / 2;
+  pl.why = placeWhy(st, pl.mach, pl.x, pl.z);
+  const msg = $('place-msg');
+  msg.textContent = pl.why ? 'Impossible : ' + pl.why : `${def.name} : emplacement libre`;
+  msg.className = pl.why ? 'bad' : 'good';
+  $('btn-place-ok').disabled = !!pl.why;
+  return { type: def.w ? PLOT_BY_ID[pl.mach].type : null, x: pl.x, z: pl.z, ok: !pl.why };
+}
+$('btn-place-ok').addEventListener('click', () => { const pl = app.placing; if (!pl || pl.why) return; sendCmd({ c: 'move', mach: pl.mach, x: pl.x, z: pl.z }); stopPlacing(); });
+$('btn-place-cancel').addEventListener('click', () => { stopPlacing(); play('tap'); });
 
 function openMenu(kind, mach) {
   const st = app.st;
@@ -387,7 +416,7 @@ $('btn-go').addEventListener('click', () => {
 });
 function openUsine(tab) {
   if (tab) app.usineTab = tab;
-  UI.fillUsine(app.st, app.usineTab, sendCmd);
+  UI.fillUsine(app.st, app.usineTab, usineSend, app.myId);
   quitReset();
   UI.overlay('screen-usine', true);
 }
@@ -419,7 +448,7 @@ $('btn-lock-home').addEventListener('click', () => { saveGame(); goHome(); });
 $('btn-zone-close').addEventListener('click', () => UI.overlay('screen-zone', false));
 $('btn-lvl-ok').addEventListener('click', () => UI.overlay('screen-levelup', false));
 $('btn-usine-close').addEventListener('click', () => UI.overlay('screen-usine', false));
-document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => { app.usineTab = t.dataset.tab; UI.fillUsine(app.st, app.usineTab, sendCmd); }));
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => { app.usineTab = t.dataset.tab; UI.fillUsine(app.st, app.usineTab, usineSend, app.myId); }));
 $('btn-spec-close').addEventListener('click', () => UI.overlay('screen-spec', false));
 $('btn-entrepot-close').addEventListener('click', () => UI.overlay('screen-entrepot', false));
 $('btn-recettes-close').addEventListener('click', () => UI.overlay('screen-recettes', false));
@@ -552,7 +581,13 @@ function frame(now) {
     const ex = cam.x - fwx * hd, ez = cam.z - fwz * hd;
     const ey = Math.max(ty + vd, height(ex, ez) + 1.5);
     renderer.setCamera([ex, ey, ez], [cam.x + fwx * 1.5, ty, cam.z + fwz * 1.5], innerHeight > innerWidth ? 1.05 : 0.85);
-    updateScene(scene, st, { myId: app.myId, me, dt, time: clock });
+    // L'invité reçoit l'aménagement dans l'état : les machines se placent pareil sur les deux téléphones
+    if (!app.isHost) applyLayout(st);
+    const ghost = updatePlacing(st, me);
+    updateScene(scene, st, { myId: app.myId, me, dt, time: clock, ghost });
+    // Ciel autour de la caméra, jour et nuit selon le temps de jeu
+    scene.sky.pos = [ex, 0, ez];
+    dayNight(scene, renderer.env, st.time);
     renderer.render(scene.root, dt);
     labels.update(renderer, UI.worldLabels(st, app.myId, me));
     UI.updateHud(st, app.myId, { bot: app.bot ? botLabel(app.bot) : '', me });
@@ -572,7 +607,7 @@ function frame(now) {
     if (menuT > 0.25) {
       menuT = 0;
       const on = (id) => $(id).classList.contains('active');
-      if (on('screen-usine')) UI.fillUsine(st, app.usineTab, sendCmd);
+      if (on('screen-usine')) UI.fillUsine(st, app.usineTab, usineSend, app.myId);
       if (on('screen-entrepot')) UI.fillEntrepot(st, app.myId, sendCmd);
       if (on('screen-recettes') && app.recMach) UI.fillRecettes(st, app.recMach, sendCmd);
       if (on('screen-spec')) UI.fillSpec(st, app.myId, pickSpec);

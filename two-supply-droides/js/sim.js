@@ -1,10 +1,10 @@
 // Simulation de référence (téléphone hôte, ou le seul téléphone en solo).
 import {
   REACH, POST_R, SAC_MAX, CARRY_SPEED, OUT_MAX, T, SCREWS, ITEMS, NODE_TYPES, MACHINES, PLOTS, ENTREPOT,
-  START, CORE, DROIDS, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_BASES, RAW, RAW_LEVEL, OUTFITS, PACK, CREDITS,
-  SLAB, WORLD, PAUSE, RAW_CONTENT, RECYCLABLE, isRaw, isDecl, isRebut, other,
+  START, CORE, PART, HEAVY, needsPart, DROIDS, ANIMALS, ANIMAL_COUNT, LEVELS, RECIPES, QC_BASES, RAW, RAW_LEVEL, OUTFITS, PACK, CREDITS,
+  SLAB, WORLD, PAUSE, ME_OUTFITS, ME_COLORS, ME_DEFAULT_COL, RAW_CONTENT, RECYCLABLE, isRaw, isDecl, isRebut, other,
 } from './config.js';
-import { NODES, ANIMAL_HOMES, PLOT_BY_ID, plotBox, genWorld, slabDist, GATES } from './world.js';
+import { NODES, ANIMAL_HOMES, PLOT_BY_ID, plotBox, genWorld, slabDist, GATES, applyLayout, placeWhy, PART_SPOTS } from './world.js';
 import { boxDist, obstacles, moveBox, steer } from './move.js';
 
 const IDS = ['A', 'B'];
@@ -21,7 +21,7 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
     nodes: NODES.map((n) => NODE_TYPES[n.type].qty),
     nodeT: NODES.map(() => 0),
     stock: {}, plots: {}, machines: {},
-    core: { x: CORE.x, z: CORE.z, hand: { A: null, B: null }, placed: false, warn: 0 },
+    parts: {},
     droids: [], animals: [],
     work: { A: null, B: null },
     seq: 1, made: 0, animalT: 0,
@@ -31,11 +31,14 @@ export function newState(mode = 'duo', seed = (Math.random() * 4294967296) >>> 0
     gen: { play: 0, lockUntil: 0 },
     qcRun: 0, clock: 0,
     orders: [], orderT: 15,
-    credits: 0, wardrobe: { owned: {}, wear: {} },
+    credits: 0, wardrobe: { owned: {}, wear: {}, me: { A: newLook(), B: newLook() } },
     request: null, forceHeavyAt: null, adjT: 0, chefT: 0,
+    layout: {},
     fx: [], cd: { A: 0, B: 0 },
   };
+  applyLayout(S);
   for (const p of PLOTS) S.plots[p.id] = { del: {}, ready: false, prog: 0, holder: null, built: false };
+  for (const p of PLOTS) if (needsPart(p.type)) S.parts[p.id] = newPart(p.id);
   S.lv0 = snapshot(S);
   ANIMAL_HOMES.slice(0, ANIMAL_COUNT).forEach((h, i) => spawnAnimal(S, h, Object.keys(ANIMALS)[i % 3]));
   return S;
@@ -47,6 +50,15 @@ function snapshot(S) {
 }
 const nowMs = (S) => S.clock || Date.now();
 
+// Pièce lourde d'un chantier : posée dans le terrain vague, portée par deux joueurs (hand) ou deux ingénieurs (eng)
+function newPart(id) {
+  const at = id === 'assembleur' ? CORE : PART_SPOTS[id] || CORE;
+  return { x: at.x, z: at.z, hand: { A: null, B: null }, placed: false, warn: 0, eng: null };
+}
+// Pièce visible et transportable : chantier débloqué, pas encore construit
+export const partOut = (S, id) => { const c = S.parts[id]; return !!c && !c.placed && plotUnlocked(S, PLOT_BY_ID[id]) && !S.plots[id].built; };
+export function debugPlacePart(S, id) { const c = S.parts[id]; if (c) { c.placed = true; c.hand = { A: null, B: null }; c.eng = null; } }
+function newLook() { return { owned: {}, wear: {}, col: {} }; }
 function newPlayer(p) { return { x: p.x, z: p.z, rot: Math.PI, sac: {}, locked: false, hint: null, wait: null }; }
 
 function spawnAnimal(S, home, sp) {
@@ -56,9 +68,20 @@ function spawnAnimal(S, home, sp) {
 // Remet en ordre un état chargé depuis une sauvegarde
 export function restoreState(S) {
   genWorld(S.seed);
+  S.layout = S.layout || {};
+  applyLayout(S);
   S.fx = []; S.cd = { A: 0, B: 0 }; S.work = { A: null, B: null };
   for (const id of IDS) Object.assign(S.players[id], { x: START[id].x, z: START[id].z, locked: false, hint: null, wait: null });
-  S.core.hand = { A: null, B: null };
+  // 0.5 : le cœur d'assembleur devient une pièce lourde parmi les autres
+  if (!S.parts) { S.parts = {}; if (S.core) S.parts.assembleur = S.core; }
+  delete S.core;
+  for (const p of PLOTS) {
+    if (!needsPart(p.type) || S.parts[p.id]) continue;
+    S.parts[p.id] = newPart(p.id);
+    const st = S.plots[p.id];
+    if (st.built || st.ready) S.parts[p.id].placed = true;
+  }
+  for (const c of Object.values(S.parts)) { c.hand = { A: null, B: null }; c.eng = null; c.warn = 0; }
   for (const st of Object.values(S.plots)) st.holder = null;
   for (const m of Object.values(S.machines)) { m.manual = null; m.cut = null; m.run = false; }
   for (const d of S.droids) {
@@ -73,6 +96,7 @@ export function restoreState(S) {
   if (!S.lv0) S.lv0 = snapshot(S);
   if (S.lv0.surplus === undefined) S.lv0.surplus = S.stats.surplus;
   S.stats.spec = S.stats.spec || 0;
+  S.wardrobe.me = S.wardrobe.me || { A: newLook(), B: newLook() };
   if (S.lv0.spec === undefined) S.lv0.spec = S.stats.spec;
   // 0.4.3 : déclassés et rebuts restent à part, dans la zone des déclassés
   const z = S.machines.zone;
@@ -264,7 +288,7 @@ export function targets(S, id) {
   const add = (key, d, o) => out.push({ key, d, kind: 'solo', ...o });
   const full = sacCount(p) >= SAC_MAX;
 
-  if (!S.core.placed && S.core.hand[id]) return [{ key: 'core' + S.core.hand[id], d: 0, kind: 'duo', act: 'ungrab', label: 'Lâcher la caisse' }];
+  for (const [pid, c] of Object.entries(S.parts)) if (!c.placed && c.hand[id]) return [{ key: `part:${pid}:${c.hand[id]}`, d: 0, kind: 'duo', act: 'ungrab', label: 'Lâcher la pièce' }];
   const fol = followers(S, id);
   const folHQ = fol.find((d) => DROIDS[d.type].work === 'hq' && !DROIDS[d.type].at);
   const folZone = fol.find((d) => DROIDS[d.type].at === 'zone');
@@ -307,7 +331,7 @@ export function targets(S, id) {
       const can = Object.entries(miss).some(([k, n]) => n > 0 && have(S, p, k) > 0);
       if (can) add(pl.id, d, { act: 'deliver', plot: pl.id, label: 'Apporter les matériaux' });
       else if (sum(miss) > 0) add(pl.id, d, { off: true, label: 'Il manque : ' + fmt(miss) });
-      else if (MACHINES[pl.type].core && !S.core.placed) add(pl.id, d, { off: true, kind: 'duo', label: 'Il manque le cœur d’assembleur' });
+      else if (S.parts[pl.id] && !S.parts[pl.id].placed) add(pl.id, d, { off: true, kind: 'duo', label: `Il manque : ${HEAVY[pl.type].name.toLowerCase()} (à ramener à deux)` });
       continue;
     }
     const m = S.machines[pl.id];
@@ -374,12 +398,12 @@ export function targets(S, id) {
     else if ((dr.st === 'work' || dr.st === 'go') && fol.length === 0) add('droid' + dr.id, d + 1.0, { act: 'reprendre', droid: dr.id, label: 'Reprendre ce droïde' });
   }
 
-  if (!S.core.placed) {
-    const c = S.core;
+  for (const [pid, c] of Object.entries(S.parts)) {
+    if (!partOut(S, pid) || c.eng) continue;
     for (const side of ['L', 'R']) {
-      const d = dist(p, { x: c.x + (side === 'L' ? -1 : 1) * CORE.handle, z: c.z });
-      if (d > POST_R || c.hand[other(id)] === side) continue;
-      add('core' + side, d, { kind: 'duo', act: 'grab', side, label: 'Saisir la poignée' });
+      const d = dist(p, { x: c.x + (side === 'L' ? -1 : 1) * PART.handle, z: c.z });
+      if (d > POST_R || c.hand[other(id)] === side || c.hand.E === side) continue;
+      add(`part:${pid}:${side}`, d, { kind: 'duo', act: 'grab', part: pid, side, label: `Saisir : ${HEAVY[PLOT_BY_ID[pid].type].name.toLowerCase()}` });
     }
   }
 
@@ -461,7 +485,7 @@ function press(S, id) {
       sfx(S, id, 'drop');
       if (!st.ready) {
         const left = missingFor(S, t.plot);
-        toast(S, id, sum(left) ? 'Encore : ' + fmt(left) : 'Il manque le cœur d’assembleur (à ramener à deux)', 'info');
+        toast(S, id, sum(left) ? 'Encore : ' + fmt(left) : `Il manque : ${HEAVY[PLOT_BY_ID[t.plot].type].name.toLowerCase()} (à ramener à deux)`, 'info');
       }
       break;
     }
@@ -538,14 +562,15 @@ function press(S, id) {
     case 'reprendre': { const dr = S.droids.find((d) => d.id === t.droid); releaseDroid(S, dr); dr.st = 'follow'; dr.who = id; sfx(S, id, 'pick'); break; }
     case 'leave': for (const d of followers(S, id)) { d.st = 'idle'; d.who = null; } break;
     case 'grab': {
-      const c = S.core;
-      c.hand[id] = t.side; p.locked = true;
+      const c = S.parts[t.part];
+      c.hand[id] = t.side; p.locked = true; c.helpAt = S.time;
       sfx(S, id, 'clong');
-      if (!c.hand[o]) call(S, o, 'Ton partenaire tient la caisse du cœur : il faut être deux pour la porter !', c.x, c.z);
-      else { toast(S, 'all', 'Caisse soulevée ! Allez dans la même direction.', 'good'); sfx(S, 'all', 'clong'); }
+      const nm = HEAVY[PLOT_BY_ID[t.part].type].name.toLowerCase();
+      if (!c.hand[o] && !c.hand.E) call(S, o, `Ton partenaire tient la pièce lourde (${nm}) : il faut être deux pour la porter !`, c.x, c.z);
+      else { toast(S, 'all', 'Pièce soulevée ! Allez dans la même direction.', 'good'); sfx(S, 'all', 'clong'); }
       break;
     }
-    case 'ungrab': S.core.hand[id] = null; p.locked = false; break;
+    case 'ungrab': for (const c of Object.values(S.parts)) if (c.hand[id]) c.hand[id] = null; p.locked = false; break;
     case 'catch': {
       const a = S.animals.find((x) => x.id === t.animal);
       a.st = 'caught'; a.by = id;
@@ -596,13 +621,16 @@ function release(S, id) {
 
 function releaseDroid(S, dr) {
   for (const j of [dr.job, dr.job2]) if (j && S.machines[j] && S.machines[j].operator === dr.id) S.machines[j].operator = null;
+  // Ingénieur repris en plein travail : il lâche la pièce lourde et le montage
+  if (dr.task && dr.task.part && S.parts[dr.task.part]) { const c = S.parts[dr.task.part]; if (c.eng && c.eng.includes(dr.id)) c.eng = null; if (dr.task.kind === 'help') c.hand.E = null; }
+  for (const st of Object.values(S.plots)) if (st.holder === 'E' + dr.id) st.holder = null;
   if (dr.task && dr.task.load && dr.task.item) addStock(S, dr.task.item, dr.task.load);
   dr.job = null; dr.job2 = null; dr.task = null; dr.carry = null; dr.repairing = false;
 }
 
 function checkReady(S, plotId) {
   const st = S.plots[plotId], pl = PLOT_BY_ID[plotId];
-  const ok = sum(missingFor(S, plotId)) === 0 && (!MACHINES[pl.type].core || S.core.placed);
+  const ok = sum(missingFor(S, plotId)) === 0 && (!S.parts[plotId] || S.parts[plotId].placed);
   if (ok && !st.ready) {
     st.ready = true;
     toast(S, 'all', `${MACHINES[pl.type].name} : matériaux livrés. Montez-la à deux !`, 'good');
@@ -623,7 +651,7 @@ function build(S, plotId) {
   if (pl.type === 'generateur') { S.gen.play = 0; toast(S, 'all', 'Générateur : jusqu’à 5 charbons et 5 bois, 1 unité brûlée toutes les 6 minutes.', 'info'); }
   if (pl.type === 'quai') S.orderT = 10;
 }
-export function forceBuild(S, plotId) { const st = S.plots[plotId]; st.del = { ...MACHINES[PLOT_BY_ID[plotId].type].cost }; st.ready = true; build(S, plotId); }
+export function forceBuild(S, plotId) { const st = S.plots[plotId]; st.del = { ...MACHINES[PLOT_BY_ID[plotId].type].cost }; st.ready = true; debugPlacePart(S, plotId); build(S, plotId); }
 function wearTime() { return T.wear[0] + Math.random() * (T.wear[1] - T.wear[0]); }
 
 // ---------- commandes des menus ----------
@@ -676,6 +704,21 @@ function command(S, id, e) {
       if (sum(back)) toast(S, id, 'Rangé à l’entrepôt : ' + fmt(back), 'info');
       break;
     }
+    // Aménagement : déplacer une machine construite (elle garde son contenu)
+    case 'move': {
+      const m = S.machines[e.mach];
+      const x = Math.round(+e.x * 2) / 2, z = Math.round(+e.z * 2) / 2;
+      if (!m) return;
+      const why = placeWhy(S, e.mach, x, z);
+      if (why) { toast(S, id, 'Impossible ici : ' + why, 'warn'); sfx(S, id, 'err'); return; }
+      S.layout[e.mach] = { x, z };
+      applyLayout(S);
+      m.cut = null;
+      for (const pid of IDS) if (S.work[pid] && S.work[pid].key === e.mach) S.work[pid] = null;
+      sfx(S, 'all', 'clong');
+      toast(S, 'all', `${MACHINES[m.type].name} déplacée.`, 'good');
+      break;
+    }
     // Objets cochés « en trop » au recycleur
     case 'trash': {
       const m = S.machines.recycleur;
@@ -712,6 +755,29 @@ function command(S, id, e) {
       toast(S, 'all', `${PACK.name} : ${DROIDS[e.type].name.toLowerCase()} entièrement habillé !`, 'good');
       break;
     }
+    // Tenues des joueurs : chacun habille son propre personnage (les crédits sont communs)
+    case 'mebuy': {
+      const o = ME_OUTFITS[e.outfit], me = S.wardrobe.me[id];
+      if (!o || me.owned[e.outfit]) return;
+      if (S.credits < o.price) { toast(S, id, 'Pas assez de crédits', 'warn'); return; }
+      S.credits -= o.price; me.owned[e.outfit] = true;
+      me.wear[o.slot] = e.outfit; me.col[e.outfit] = ME_DEFAULT_COL[e.outfit] || 0;
+      sfx(S, 'all', 'ok');
+      toast(S, id, `${o.name} achetée !`, 'good');
+      break;
+    }
+    case 'mewear': {
+      const o = ME_OUTFITS[e.outfit], me = S.wardrobe.me[id];
+      if (!o || !me.owned[e.outfit]) return;
+      if (me.wear[o.slot] === e.outfit) delete me.wear[o.slot]; else me.wear[o.slot] = e.outfit;
+      break;
+    }
+    case 'mecol': {
+      const me = S.wardrobe.me[id];
+      if (!ME_OUTFITS[e.outfit] || !me.owned[e.outfit] || !(e.n >= 0 && e.n < ME_COLORS.length)) return;
+      me.col[e.outfit] = e.n | 0;
+      break;
+    }
     case 'wear': {
       if (!DROIDS[e.type]) return;
       const w = (S.wardrobe.wear[e.type] = S.wardrobe.wear[e.type] || {});
@@ -744,7 +810,7 @@ function specialize(S, id, type) {
 }
 
 // Pendant la surchauffe, seuls le vestiaire et l'organigramme restent accessibles
-const LOCKED_OK = new Set(['buy', 'pack', 'wear']);
+const LOCKED_OK = new Set(['buy', 'pack', 'wear', 'mebuy', 'mewear', 'mecol']);
 export function commandsOnly(S, inputs) {
   for (const id of IDS) {
     const inp = inputs[id];
@@ -845,46 +911,67 @@ function fixMachine(S, m, msg) {
   toast(S, 'all', `${msg} : ${MACHINES[m.type].name.toLowerCase()}.`, 'good');
 }
 
+// Pièces lourdes portées : par les deux joueurs (ils vont dans la même direction), ou par un joueur aidé d'un ingénieur
+const GROUP_W = PART.w + 2 * (PART.handle - PART.w / 2 + 0.4);
+// À deux, on enjambe les petits débris (rochers, fûts, tas) : seuls les murs, machines et bâtiments arrêtent la pièce
+const carryObs = (S, obs) => obs.filter((o) => !o.core && !o.c);
+// Itinéraire d'une pièce portée vers son chantier : passages des ruines, puis contournement des machines
+// (obstacles élargis de la taille des porteurs). Sert aux ingénieurs (et aux tests).
+export function partRoute(S, pid) {
+  const c = S.parts[pid], target = PLOT_BY_ID[pid];
+  const wp = waypoint(c, target);
+  if (wp) return wp;
+  const big = carryObs(S, obstacles(S)).filter((o) => o !== target && !(o.x === target.x && o.z === target.z)).map((o) => ({ x: o.x, z: o.z, w: o.w + GROUP_W - 0.6, d: o.d + PART.d - 0.2 }));
+  return detour(c, target, big, 9) || target;
+}
 function carry(S, inputs, dt) {
-  const c = S.core;
-  if (c.placed) return;
-  c.warn = Math.max(0, c.warn - dt);
-  if (c.hand.A && c.hand.B) {
-    const a = inputs.A || {}, b = inputs.B || {};
-    const ax = a.mx || 0, az = a.mz || 0, bx = b.mx || 0, bz = b.mz || 0;
-    const la = Math.hypot(ax, az), lb = Math.hypot(bx, bz);
-    let vx = (ax + bx) / 2, vz = (az + bz) / 2;
-    if (la > 0.25 && lb > 0.25 && (ax * bx + az * bz) / (la * lb) < -0.3) {
-      vx = 0; vz = 0;
-      if (c.warn <= 0) { toast(S, 'all', 'Vous tirez dans des sens opposés !', 'warn'); sfx(S, 'all', 'err'); }
-      c.warn = 1.5;
-    }
-    const groupW = CORE.w + 2 * (CORE.handle - CORE.w / 2 + 0.4);
-    const obs = obstacles(S).filter((o) => !o.core);
-    [c.x, c.z] = moveBox(c.x, c.z, vx * CARRY_SPEED * dt, vz * CARRY_SPEED * dt, groupW, CORE.d, obs);
-    const target = PLOT_BY_ID.assembleur;
-    if (Math.hypot(c.x - target.x, c.z - target.z) < 2.4) {
-      c.x = target.x; c.z = target.z; c.placed = true;
-      for (const id of IDS) {
-        const p = S.players[id];
-        const post = c.hand[id] === 'L' ? postL(target) : postR(target);
-        p.x = post.x; p.z = post.z; p.locked = false;
+  for (const [pid, c] of Object.entries(S.parts)) {
+    if (c.placed) continue;
+    c.warn = Math.max(0, c.warn - dt);
+    const ids = IDS.filter((id) => c.hand[id]);
+    let vx = 0, vz = 0, moving = false;
+    if (ids.length === 2) {
+      const a = inputs.A || {}, b = inputs.B || {};
+      const ax = a.mx || 0, az = a.mz || 0, bx = b.mx || 0, bz = b.mz || 0;
+      const la = Math.hypot(ax, az), lb = Math.hypot(bx, bz);
+      vx = (ax + bx) / 2; vz = (az + bz) / 2; moving = true;
+      if (la > 0.25 && lb > 0.25 && (ax * bx + az * bz) / (la * lb) < -0.3) {
+        vx = 0; vz = 0;
+        if (c.warn <= 0) { toast(S, 'all', 'Vous tirez dans des sens opposés !', 'warn'); sfx(S, 'all', 'err'); }
+        c.warn = 1.5;
       }
-      c.hand = { A: null, B: null };
-      sfx(S, 'all', 'won');
-      toast(S, 'all', 'Cœur d’assembleur en place !', 'good');
-      checkReady(S, 'assembleur');
-      return;
+    } else if (ids.length === 1 && c.hand.E) {
+      const a = inputs[ids[0]] || {};
+      vx = a.mx || 0; vz = a.mz || 0; moving = true;
+    }
+    if (moving) {
+      [c.x, c.z] = moveBox(c.x, c.z, vx * CARRY_SPEED * dt, vz * CARRY_SPEED * dt, GROUP_W, PART.d, carryObs(S, obstacles(S)));
+      if (partArrived(S, pid)) continue;
+    }
+    for (const id of ids) {
+      const side = c.hand[id], p = S.players[id];
+      p.x = c.x + (side === 'L' ? -1 : 1) * PART.handle;
+      p.z = c.z;
+      p.rot = side === 'L' ? Math.PI / 2 : -Math.PI / 2;
     }
   }
+}
+// Pièce arrivée sur son chantier : elle est posée, les porteurs se retrouvent aux deux postes de montage
+function partArrived(S, pid) {
+  const c = S.parts[pid], target = PLOT_BY_ID[pid];
+  if (Math.hypot(c.x - target.x, c.z - target.z) >= 2.4) return false;
+  c.x = target.x; c.z = target.z; c.placed = true;
   for (const id of IDS) {
-    const side = c.hand[id];
-    if (!side) continue;
-    const p = S.players[id];
-    p.x = c.x + (side === 'L' ? -1 : 1) * CORE.handle;
-    p.z = c.z;
-    p.rot = side === 'L' ? Math.PI / 2 : -Math.PI / 2;
+    if (!c.hand[id]) continue;
+    const p = S.players[id], post = c.hand[id] === 'L' ? postL(target) : postR(target);
+    p.x = post.x; p.z = post.z; p.locked = false;
   }
+  for (const d of S.droids) if (d.task && d.task.part === pid) { d.task = null; d.carry = null; }
+  c.hand = { A: null, B: null }; c.eng = null;
+  sfx(S, 'all', 'won');
+  toast(S, 'all', `${HEAVY[target.type].name} en place !`, 'good');
+  checkReady(S, pid);
+  return true;
 }
 
 // Recettes devenues indisponibles (nouvelle méthode) ou machines sans recette choisie
@@ -1113,10 +1200,10 @@ const segBox = (p, q, b, e) => segRect(p, q, b.x - b.w / 2, b.x + b.w / 2, b.z -
 const inBox = (p, b, e) => (b.c ? Math.hypot(p.x - b.x, p.z - b.z) < b.r + e : Math.abs(p.x - b.x) < b.w / 2 + e && Math.abs(p.z - b.z) < b.d / 2 + e);
 // Une machine ou un meuble (coin pause, entrepôt…) barre le chemin : on le contourne par le coin le plus court.
 // Le droïde garde le coin choisi jusqu'à l'atteindre, puis ne revient pas sur un coin déjà passé.
-function detour(d, pt, obs) {
+function detour(d, pt, obs, maxSize = 5) {
   let box = null, bt = 2;
   for (const b of obs) {
-    if (b.c || b.core || Math.max(b.w, b.d) > 5 || inBox(pt, b, 0.36) || inBox(d, b, 0.36)) continue;
+    if (b.c || b.core || Math.max(b.w, b.d) > maxSize || inBox(pt, b, 0.36) || inBox(d, b, 0.36)) continue;
     const t = segBox(d, pt, b, 0.36);
     if (t >= 0 && t < bt) { bt = t; box = b; }
   }
@@ -1365,30 +1452,50 @@ const BRAINS = {
   },
   maintenance(S, d, dt, obs) { repairBrain(S, d, dt, obs, false); },
   chefmaint(S, d, dt, obs) { repairBrain(S, d, dt, obs, true); },
+  // Ingénieur : livre les matériaux des chantiers ; le montage se fait à deux (deux ingénieurs, ou un ingénieur et un joueur) ;
+  // à deux, les ingénieurs vont aussi chercher les pièces lourdes dans le terrain vague.
   ingenieur(S, d, dt, obs) {
-    if (!d.task) {
-      const pl = PLOTS.find((p) => plotUnlocked(S, p) && !S.plots[p.id].built && !MACHINES[p.type].core &&
-        !S.droids.some((x) => x !== d && x.task && x.task.plot === p.id) &&
-        (S.plots[p.id].ready || Object.entries(missingFor(S, p.id)).some(([k, n]) => n > 0 && (S.stock[k] || 0) > 0)));
-      if (!pl) { rest(S, d, dt, obs); return; }
-      d.task = { plot: pl.id, t: 0, sig: 'build' + pl.id };
-    }
-    const pl = PLOT_BY_ID[d.task.plot], st = S.plots[pl.id];
+    if (S.engPlanT !== S.time) { S.engPlanT = S.time; engineersPlan(S); }
+    if (!d.task) { rest(S, d, dt, obs); return; }
+    const t = d.task, key = 'E' + d.id;
+    if (t.kind === 'carry' || t.kind === 'help') { engineerCarry(S, d, dt, obs); return; }
+    const pl = PLOT_BY_ID[t.plot], st = S.plots[pl.id];
     if (st.built) { d.task = null; return; }
-    if (!goTo(d, postR(pl), dt, obs, 3.6)) return;
-    if (!st.ready) {
+    if (t.kind === 'deliver') {
+      if (!goTo(d, postR(pl), dt, obs, 3.6)) return;
       for (const [k, n] of Object.entries(missingFor(S, pl.id))) {
         const q = Math.min(n, S.stock[k] || 0);
         if (q > 0) { addStock(S, k, -q); st.del[k] = (st.del[k] || 0) + q; }
       }
       checkReady(S, pl.id);
-      if (!st.ready) { d.task = null; return; }
+      d.task = null;
+      return;
     }
-    d.task.t += dt; d.repairing = true;
-    if (d.task.t >= 0.9) {
-      d.task.t = 0;
+    if (!st.ready) { d.task = null; return; }
+    t.wait = (t.wait || 0) + dt;
+    if (t.kind === 'hold') {
+      // Un joueur a pris la pièce à gauche : l'ingénieur passe à droite pour visser
+      if (st.holder && st.holder !== key) { t.kind = 'screw'; t.wait = 0; return; }
+      if (!goTo(d, postL(pl), dt, obs, 3.6)) return;
+      st.holder = key; d.repairing = true; d.rot = Math.PI / 2;
+      const screwer = IDS.some((id) => dist(S.players[id], postR(pl)) <= POST_R) || S.droids.some((x) => x !== d && x.task && x.task.plot === pl.id && x.task.kind === 'screw');
+      if (screwer) t.wait = 0;
+      else if (t.wait > 2) { const pr = postR(pl); for (const id of IDS) call(S, id, `L’ingénieur tient la pièce (${MACHINES[pl.type].name.toLowerCase()}) : va visser de l’autre côté !`, pr.x, pr.z); }
+      // Personne ne vient : il retourne à ses autres tâches
+      if (t.wait > 45) { st.holder = null; st.engWait = S.time; d.task = null; }
+      return;
+    }
+    // Visser (côté droit) pendant que quelqu'un tient à gauche
+    if (!goTo(d, postR(pl), dt, obs, 3.6)) return;
+    d.rot = -Math.PI / 2;
+    if (!st.holder || st.holder === key) { if (t.wait > 30) d.task = null; return; }
+    t.wait = 0; d.repairing = true;
+    t.t = (t.t || 0) + dt;
+    if (t.t >= 0.9) {
+      t.t = 0;
       st.prog = Math.min(1, st.prog + 1 / (SCREWS * 1.5));
-      if (st.prog >= 1) { build(S, pl.id); d.task = null; toast(S, 'all', 'L’ingénieur a monté une nouvelle machine.', 'good'); }
+      sfx(S, 'all', 'tap');
+      if (st.prog >= 1) { build(S, pl.id); d.task = null; toast(S, 'all', 'Les ingénieurs ont monté une nouvelle machine.', 'good'); }
     }
   },
   // Fouille le terrain vague et ramène la matière qui manque le plus (ou celle demandée)
@@ -1458,6 +1565,86 @@ const BRAINS = {
     }
   },
 };
+
+// ---------- ingénieurs : qui fait quoi ----------
+function engineersPlan(S) {
+  const eng = S.droids.filter((x) => x.type === 'ingenieur' && x.st === 'work' && x.job === 'hq');
+  const free = eng.filter((x) => !x.task);
+  if (!free.length) return;
+  const has = (pid, kind) => eng.some((x) => x.task && x.task.plot === pid && x.task.kind === kind);
+  const give = (task) => { const d = free.shift(); d.task = { ...task, sig: 'eng' + task.kind + (task.plot || task.part) }; return d; };
+  // 1. Aider un joueur qui tient seul une pièce lourde (à deux téléphones, quand le partenaire est loin)
+  if (S.mode !== 'solo') for (const [pid, c] of Object.entries(S.parts)) {
+    if (!free.length || !partOut(S, pid) || c.eng || c.hand.E) continue;
+    const ids = IDS.filter((id) => c.hand[id]);
+    if (ids.length !== 1 || S.time - (c.helpAt || 0) < 2 || dist(S.players[other(ids[0])], c) < 6) continue;
+    if (eng.some((x) => x.task && x.task.part === pid)) continue;
+    give({ kind: 'help', part: pid, side: c.hand[ids[0]] === 'L' ? 'R' : 'L' });
+  }
+  for (const p of PLOTS) {
+    if (!free.length) break;
+    const st = S.plots[p.id];
+    if (!plotUnlocked(S, p) || st.built) continue;
+    if (st.ready) {
+      // 2. Montage : tenir à gauche, visser à droite (sauf si un joueur le fait déjà)
+      const pHold = st.holder && !String(st.holder).startsWith('E');
+      const pScrew = IDS.some((id) => dist(S.players[id], postR(p)) <= POST_R);
+      if (!pHold && !has(p.id, 'hold') && free.length && S.time - (st.engWait ?? -99) >= 30) give({ kind: 'hold', plot: p.id });
+      if (!pScrew && !has(p.id, 'screw') && free.length && (pHold || has(p.id, 'hold'))) give({ kind: 'screw', plot: p.id });
+      continue;
+    }
+    // 3. Livrer les matériaux qui sont à l'entrepôt
+    if (!has(p.id, 'deliver') && Object.entries(missingFor(S, p.id)).some(([k, n]) => n > 0 && (S.stock[k] || 0) > 0)) give({ kind: 'deliver', plot: p.id });
+  }
+  // 4. À deux : aller chercher une pièce lourde dans le terrain vague
+  for (const [pid, c] of Object.entries(S.parts)) {
+    if (free.length < 2) break;
+    if (!partOut(S, pid) || c.eng || c.hand.A || c.hand.B || eng.some((x) => x.task && x.task.part === pid)) continue;
+    const a = give({ kind: 'carry', part: pid, side: 'L' }), b = give({ kind: 'carry', part: pid, side: 'R' });
+    a.task.mate = b.id; b.task.mate = a.id;
+  }
+}
+
+// Ingénieur porteur : prend sa poignée, puis (celui de gauche) mène la pièce jusqu'à son chantier
+function engineerCarry(S, d, dt, obs) {
+  const t = d.task, c = S.parts[t.part];
+  const stop = () => { if (c && c.eng && c.eng.includes(d.id)) c.eng = null; if (c && c.hand.E && t.kind === 'help') c.hand.E = null; d.task = null; d.carry = null; };
+  if (!c || !partOut(S, t.part)) { stop(); return; }
+  const handle = { x: c.x + (t.side === 'L' ? -1 : 1) * PART.handle, z: c.z };
+  if (t.kind === 'help') {
+    // Un joueur tient l'autre poignée : l'ingénieur prend celle-ci, le joueur dirige
+    if (!IDS.some((id) => c.hand[id])) { stop(); return; }
+    if (c.hand.E !== t.side) { if (goTo(d, handle, dt, obs, 4)) { c.hand.E = t.side; toast(S, 'all', 'Un ingénieur t’aide à porter la pièce.', 'good'); } return; }
+    d.x = handle.x; d.z = handle.z; d.rot = t.side === 'L' ? Math.PI / 2 : -Math.PI / 2; d.carry = 'part';
+    return;
+  }
+  const mate = S.droids.find((x) => x.id === t.mate);
+  if (!mate || !mate.task || mate.task.part !== t.part || c.hand.A || c.hand.B) { stop(); return; }
+  if (!c.eng) {
+    const there = goTo(d, handle, dt, obs, 4);
+    const mh = { x: c.x + (t.side === 'L' ? 1 : -1) * PART.handle, z: c.z };
+    if (there && dist(mate, mh) < 0.45) { c.eng = t.side === 'L' ? [d.id, mate.id] : [mate.id, d.id]; sfx(S, 'all', 'clong'); }
+    return;
+  }
+  d.carry = 'part';
+  if (c.eng[0] === d.id) {
+    // Celui de gauche mène : passages dans les ruines, puis tout droit vers le chantier
+    const wp = partRoute(S, t.part);
+    const dx = wp.x - c.x, dz = wp.z - c.z, l = Math.hypot(dx, dz) || 1, step = Math.min(l, CARRY_SPEED * 0.9 * dt);
+    const x0 = c.x, z0 = c.z;
+    if (c.ghostT > 0) { c.ghostT -= dt; c.x += (dx / l) * step; c.z += (dz / l) * step; }
+    else [c.x, c.z] = moveBox(c.x, c.z, (dx / l) * step, (dz / l) * step, GROUP_W, PART.d, carryObs(S, obs));
+    // Coincés contre un obstacle : ils le contournent en passant au plus près
+    c.stuckT = Math.hypot(c.x - x0, c.z - z0) < step * 0.3 ? (c.stuckT || 0) + dt : 0;
+    if (c.stuckT > 1.2) { c.ghostT = 1.6; c.stuckT = 0; }
+    if (partArrived(S, t.part)) return;
+  }
+  for (const [k, id] of c.eng.entries()) {
+    const x = S.droids.find((q) => q.id === id);
+    if (!x) continue;
+    x.x = c.x + (k === 0 ? -1 : 1) * PART.handle; x.z = c.z; x.rot = k === 0 ? Math.PI / 2 : -Math.PI / 2; x.moving = true;
+  }
+}
 
 function repairBrain(S, d, dt, obs, chief) {
   if (!d.task) {
@@ -1625,7 +1812,7 @@ export function goalStatus(S, gid) {
   if (g && g.c) { const [v, n] = goalProgress(S, g); return v >= n; }
   const M = S.machines, st = S.stats, has = (t) => S.droids.some((d) => d.type === t);
   switch (gid) {
-    case 'core': return S.core.placed;
+    case 'core': return S.parts.assembleur.placed;
     case 'droid1': return S.made >= 1;
     case 'fuel': return st.burned >= 1;
     case 'heavy': return st.heavyFixed >= 1;
@@ -1670,9 +1857,10 @@ function waits(S) {
   for (const id of IDS) {
     const p = S.players[id], o = other(id);
     p.wait = null;
-    if (!S.core.placed && S.core.hand[id] && !S.core.hand[o]) p.wait = 'Il faut être deux !';
+    if (Object.values(S.parts).some((c) => !c.placed && c.hand[id] && !c.hand[o] && !c.hand.E && !c.eng)) p.wait = 'Il faut être deux !';
     for (const [pid, st] of Object.entries(S.plots)) {
-      if (st.holder === id && dist(S.players[o], postR(PLOT_BY_ID[pid])) > POST_R) {
+      const engScrew = S.droids.some((x) => x.task && x.task.plot === pid && x.task.kind === 'screw' && dist(x, postR(PLOT_BY_ID[pid])) < 0.6);
+      if (st.holder === id && !engScrew && dist(S.players[o], postR(PLOT_BY_ID[pid])) > POST_R) {
         p.wait = 'Il faut être deux !';
         const pr = postR(PLOT_BY_ID[pid]);
         call(S, o, 'Ton partenaire tient la pièce : va visser de l’autre côté !', pr.x, pr.z);

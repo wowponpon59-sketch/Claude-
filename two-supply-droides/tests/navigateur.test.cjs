@@ -281,14 +281,52 @@ const assert = (c, m) => { if (!c) throw new Error('ÉCHEC : ' + m); console.log
     await A.click('#btn-call');
     await A.evaluate(() => window.__ts.advance(6));
     assert(await until(A, () => /te rejoint/.test(document.getElementById('mode-name').textContent)), 'appelé, le coéquipier vient');
-    const lbl = async (x, z) => { await A.evaluate(([x, z]) => window.__ts.tp(x, z, Math.PI), [x, z]); await sleep(1200); return A.evaluate(() => [...document.getElementById('labels').children].filter((e) => e.style.display !== 'none').map((e) => e.textContent).join(' ')); };
-    assert(/Forge/.test(await lbl(-17, -10 + 1.2 + 1.5)), 'nom de la forge à 1,5 m');
-    assert(!/Forge/.test(await lbl(-17, -10 + 1.2 + 6)), 'pas de nom de la forge à 6 m');
+    // (sans carte graphique, une image peut prendre plus d'une seconde : on attend le résultat)
+    const forgeShown = (x, z, want) => A.evaluate(([x, z]) => window.__ts.tp(x, z, Math.PI), [x, z]).then(() => until(A, (w) => /Forge/.test([...document.getElementById('labels').children].filter((e) => e.style.display !== 'none').map((e) => e.textContent).join(' ')) === w, want, 8000));
+    assert(await forgeShown(-17, -10 + 1.2 + 1.5, true), 'nom de la forge à 1,5 m');
+    assert(await forgeShown(-17, -10 + 1.2 + 6, false), 'pas de nom de la forge à 6 m');
     await A.evaluate(() => window.__ts.tp(0, 3, Math.PI));
     await sleep(1500);
     const dc = await A.evaluate(() => [window.__ts.renderer().drawCalls, window.__ts.renderer().shadowCalls, window.__ts.app.sim.droids.length]);
     console.log('  objets dessinés :', dc[0], '· ombres :', dc[1], '· droïdes :', dc[2]);
     await A.screenshot({ path: OUT + '14e-usine.png' });
+  }
+
+  // ---------- 0.5 : aménager, tenues du joueur, pièces lourdes, nuit ----------
+  console.log('0.5');
+  {
+    // Aménager : la barre « Poser ici » apparaît, le fantôme suit le joueur ; Annuler la ferme
+    await A.evaluate(() => window.__ts.tp(0, 4, 0));
+    await A.click('#btn-usine');
+    await until(A, () => document.getElementById('screen-usine').classList.contains('active'));
+    await A.click('.tab[data-tab="amenager"]');
+    assert(await until(A, () => !!document.querySelector('#usine-body button[data-a="place"][data-m="ceramique"]')), 'onglet Aménager : liste des machines');
+    await A.click('#usine-body button[data-a="place"][data-m="ceramique"]');
+    assert(await until(A, () => !document.getElementById('place-bar').hidden), 'barre « Poser ici » affichée');
+    await sleep(1200);
+    await A.screenshot({ path: OUT + '15-amenager.png' });
+    const msg = await A.evaluate(() => document.getElementById('place-msg').textContent);
+    assert(/emplacement libre|Impossible/.test(msg), 'message d’emplacement : ' + msg);
+    await A.click('#btn-place-cancel');
+    assert(await until(A, () => document.getElementById('place-bar').hidden), 'Annuler ferme la barre');
+    // Onglet Moi : acheter une cape et choisir sa couleur
+    await A.evaluate(() => { window.__ts.app.sim.credits += 300; });
+    await A.click('#btn-usine');
+    await until(A, () => document.getElementById('screen-usine').classList.contains('active'));
+    await A.click('.tab[data-tab="moi"]');
+    assert(await until(A, () => !!document.querySelector('#usine-body button[data-a="mebuy"][data-o="cape"]')), 'onglet Moi');
+    await A.click('#usine-body button[data-a="mebuy"][data-o="cape"]');
+    assert(await until(A, () => (window.__ts.app.sim.wardrobe.me.A.wear || {}).dos === 'cape'), 'cape achetée et portée');
+    assert(await until(A, () => !!document.querySelector('#usine-body .swb[data-o="cape"][data-n="6"]')), 'couleurs proposées');
+    await A.click('#usine-body .swb[data-o="cape"][data-n="6"]');
+    assert(await until(A, () => window.__ts.app.sim.wardrobe.me.A.col.cape === 6), 'couleur choisie');
+    await A.click('#btn-usine-close');
+    // Nuit : lampadaires allumés
+    await A.evaluate(() => { window.__ts.app.sim.time = 560; window.__ts.tp(-17, 2, Math.PI); });
+    assert(await until(A, () => window.__ts.renderer().env.night > 0.9), 'la nuit tombe');
+    await sleep(1500);
+    await A.screenshot({ path: OUT + '16-nuit.png' });
+    await A.evaluate(() => { window.__ts.app.sim.time = 30; });
   }
   await ctx.close();
 

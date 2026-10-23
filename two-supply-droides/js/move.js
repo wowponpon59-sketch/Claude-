@@ -1,5 +1,5 @@
 // Déplacements et collisions (cercles et boîtes), partagés par l'hôte et l'invité.
-import { WORLD, PLAYER_R, PLOTS, CORE } from './config.js';
+import { WORLD, PLAYER_R, PLOTS, PART } from './config.js';
 import { STATIC_OBS, plotBox } from './world.js';
 
 export function obstacles(S) {
@@ -9,7 +9,11 @@ export function obstacles(S) {
     const st = S.plots[p.id];
     if (st && (st.built || st.ready)) list.push(plotBox(p));
   }
-  if (S.core && !S.core.placed) list.push({ x: S.core.x, z: S.core.z, w: CORE.w, d: CORE.d, core: true });
+  // Pièces lourdes posées dans le terrain vague (celles des chantiers débloqués)
+  if (S.parts) for (const p of PLOTS) {
+    const c = S.parts[p.id];
+    if (c && !c.placed && (p.level || 1) <= S.level + 1 && !(S.plots[p.id] && S.plots[p.id].built)) list.push({ x: c.x, z: c.z, w: PART.w, d: PART.d, core: true });
+  }
   return list;
 }
 

@@ -1,6 +1,6 @@
 // Modèles 3D procéduraux : terrain vague, débris, ruines, machines, humains, droïdes, créatures.
 import { Node, mesh, meshes, mat, bake, box, cylinder, sphere, torus, plane, ring, lump, terrain, P } from './gl.js';
-import { WORLD, SLAB, NODE_TYPES, MACHINES, ENTREPOT, CORE, DROIDS, PLAYER_COLORS, ITEMS, LOOKS } from './config.js';
+import { WORLD, SLAB, NODE_TYPES, MACHINES, ENTREPOT, CORE, DROIDS, PLAYER_COLORS, ITEMS, LOOKS, HEAVY, ME_COLORS, LAMP_POSTS } from './config.js';
 import { height, noise, rng, NODES, PROPS, RUINS, POND } from './world.js';
 
 export const C = {
@@ -38,6 +38,26 @@ export function buildGround() {
   // Dalle de l'usine (béton fissuré)
   const sw = SLAB.x1 - SLAB.x0, sd = SLAB.z1 - SLAB.z0;
   root.add(mesh(box(sw, 0.3, sd, -0.26), mat(C.concrete, { pattern: P.concrete, cast: false })).at((SLAB.x0 + SLAB.x1) / 2, 0, (SLAB.z0 + SLAB.z1) / 2));
+  // Marquage au sol de l'usine : allées jaunes en pointillés entre les rangées de machines, passage piéton devant l'entrepôt
+  const marks = [];
+  for (const z of [-5.75, 2.75, 10.1]) for (let x = SLAB.x0 + 1.5; x < SLAB.x1 - 1.5; x += 1.6) marks.push({ g: B(1.0, 0.01, 0.12), p: [x + 0.5, 0.04, z], c: [0.92, 0.72, 0.1] });
+  for (let k = 0; k < 6; k++) marks.push({ g: B(0.35, 0.01, 1.4), p: [-1.75 + k * 0.7, 0.04, 1.7], c: [0.92, 0.92, 0.88] });
+  root.add(meshes(bake(marks), mat([1, 1, 1], { pattern: P.paint, rough: 0.8, cast: false })));
+  // Flaques d'eau sur le béton
+  const pr = rng(17), pud = [];
+  for (const [x, z] of [[-12.5, -5.5], [5.5, -6.2], [13, 3.4], [-4.5, 10.6], [-19, 3.2], [12.5, 10.8], [-13, 11]]) pud.push({ g: ring(0, 0.5 + pr() * 0.6, 18), p: [x, 0.045, z], s: [1.4 + pr() * 0.6, 1, 0.8 + pr() * 0.4], r: [0, pr() * 3, 0], c: [0.25, 0.3, 0.32] });
+  root.add(meshes(bake(pud), mat([1, 1, 1], { pattern: P.water, opacity: 0.55, cast: false })));
+  // Herbes folles et petites fleurs dans le terrain vague
+  const gr = rng(23), tufts = [];
+  for (let i = 0; i < 520; i++) {
+    const x = (gr() * 2 - 1) * (WORLD.half - 1), z = (gr() * 2 - 1) * (WORLD.half - 1);
+    if (Math.abs(x) < SLAB.x1 + 0.5 && z > SLAB.z0 - 0.5 && z < SLAB.z1 + 0.5) continue;
+    if (Math.hypot(x - POND.x, z - POND.z) < POND.r) continue;
+    const yy = height(x, z), green = vary([0.55, 0.56, 0.3], gr, 0.2);
+    for (let k = 0; k < 5; k++) tufts.push({ g: CY(0, 0.03, 0.25 + gr() * 0.35, 3), p: [x + (gr() - 0.5) * 0.4, yy, z + (gr() - 0.5) * 0.4], r: [(gr() - 0.5) * 0.7, 0, (gr() - 0.5) * 0.7], c: green });
+    if (gr() < 0.18) tufts.push({ g: SP(0.05, 5, 4), p: [x, yy + 0.32, z], c: gr() < 0.5 ? [0.95, 0.85, 0.2] : [0.95, 0.95, 0.92] });
+  }
+  root.add(meshes(bake(tufts), mat([1, 1, 1], { pattern: P.plain, rough: 0.9, cast: false })));
   // Mare
   const w = mesh(ring(0, POND.r + 1.2, 40), mat(C.water, { pattern: P.water, opacity: 0.86, cast: false }));
   w.pos = [POND.x, -0.42, POND.z];
@@ -472,10 +492,29 @@ export function machineModel(type) {
     for (let k = 0; k < 4; k++) cr.push({ g: B(0.5, 0.45, 0.5), p: [-1.4 + (k % 2) * 0.55, 0.7 + Math.floor(k / 2) * 0.46, -0.3 + (r2() - 0.5) * 0.2], c: vary([0.78, 0.62, 0.4], r2, 0.1) });
     root.add(meshes(bake(cr), mat([1, 1, 1], { pattern: P.wood })));
   }
+  // Le métal nu des machines devient du métal brossé
+  const brush = (n) => { if (n.mesh && n.mesh.mat.color === C.steel) n.mesh.mat.pattern = P.metal; n.children.forEach(brush); };
+  brush(root);
+  if (type !== 'zone' && type !== 'quai') root.add(machineDetails(type, m));
   const lamp = light();
   lamp.pos = [m.w / 2 - 0.2, type === 'assembleur' ? 3.05 : type === 'quai' ? 2.8 : 2.0, -m.d / 2 + 0.3];
   root.add(lamp);
   anim.lamp = lamp;
+  // Cheminée : fumée claire quand la machine tourne
+  const CHIM = { forge: [0.75, 3.5, -0.5], fonderie: [-0.8, 3.9, -0.5], four: [0.5, 2.8, -0.5], ceramique: [-0.2, 3.3, -0.05], generateur: [-0.8, 2.75, -0.45] };
+  if (CHIM[type]) {
+    const puff = new Node().at(...CHIM[type]);
+    for (let k = 0; k < 4; k++) puff.add(mesh(SP(0.18, 8, 6), mat([0.78, 0.78, 0.76], { opacity: 0.4, cast: false })));
+    puff.visible = false;
+    root.add(puff);
+    anim.puff = puff;
+  }
+  // Étincelles quand elle est en panne
+  const sparks = new Node().at(0, 1.2, m.d / 2 - 0.2);
+  for (let k = 0; k < 6; k++) sparks.add(mesh(B(0.04, 0.04, 0.04), mat([1, 0.7, 0.2], { emissive: [1.0, 0.6, 0.1], unlit: 1, cast: false })));
+  sparks.visible = false;
+  root.add(sparks);
+  anim.sparks = sparks;
   const smoke = new Node();
   for (let k = 0; k < 4; k++) smoke.add(mesh(SP(0.25, 8, 6), mat([0.3, 0.3, 0.3], { opacity: 0.45, cast: false })));
   smoke.pos = [0, 1.8, 0];
@@ -484,6 +523,79 @@ export function machineModel(type) {
   anim.smoke = smoke;
   root.anim = anim;
   return root;
+}
+
+// Détails communs des machines (boulons, marquage au sol, tuyauterie, pupitre de commande, câble), fusionnés en 2 objets
+function machineDetails(type, m) {
+  return geoNode('det' + type, () => {
+    const metal = [], paint = [];
+    const W = m.w + 0.4, D = m.d + 0.4;
+    // Boulons tout autour du socle
+    for (let x = -W / 2 + 0.15; x <= W / 2 - 0.1; x += 0.45) for (const z of [-D / 2 + 0.1, D / 2 - 0.1]) metal.push({ g: SP(0.03, 6, 4), p: [x, 0.1, z], c: [0.7, 0.72, 0.75] });
+    for (let z = -D / 2 + 0.55; z <= D / 2 - 0.4; z += 0.45) for (const x of [-W / 2 + 0.1, W / 2 - 0.1]) metal.push({ g: SP(0.03, 6, 4), p: [x, 0.1, z], c: [0.7, 0.72, 0.75] });
+    // Marquage jaune et noir aux quatre coins
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (let k = 0; k < 4; k++) {
+      const c = k % 2 ? [0.08, 0.08, 0.09] : [0.95, 0.75, 0.08];
+      paint.push({ g: B(0.12, 0.012, 0.06), p: [sx * (W / 2 - 0.12 - k * 0.12), 0.1, sz * (D / 2 - 0.05)], c });
+      paint.push({ g: B(0.06, 0.012, 0.12), p: [sx * (W / 2 - 0.05), 0.1, sz * (D / 2 - 0.12 - k * 0.12)], c });
+    }
+    // Tuyauterie à l'arrière (couleur selon la machine), coude et collier
+    const pc = ['circuits', 'trefileuse', 'emballeuse'].includes(type) ? [0.78, 0.5, 0.3] : ['forge', 'fonderie', 'four', 'ceramique'].includes(type) ? [0.5, 0.36, 0.28] : [0.55, 0.58, 0.62];
+    const px = -m.w / 2 + 0.25, pz = -m.d / 2 + 0.12, ph = 1.5 + (m.w % 1) * 0.6;
+    metal.push({ g: CY(0.07, 0.07, ph, 10), p: [px, 0.08, pz], c: pc });
+    metal.push({ g: SP(0.09, 10, 8), p: [px, 0.08 + ph, pz], c: pc });
+    metal.push({ g: CY(0.07, 0.07, m.w * 0.55, 10, -m.w * 0.55), p: [px, 0.08 + ph, pz], r: [0, 0, Math.PI / 2], c: pc });
+    for (const y of [0.4, 1.0]) metal.push({ g: CY(0.09, 0.09, 0.06, 10), p: [px, y, pz], c: [0.3, 0.3, 0.32] });
+    // Vanne rouge sur le tuyau
+    paint.push({ g: TO(0.08, 0.015), p: [px + 0.12, 0.75, pz], r: [0, 0, Math.PI / 2], c: [0.85, 0.15, 0.1] });
+    // Pupitre de commande sur le côté droit : pied, écran, trois boutons, câble au sol
+    const cx = m.w / 2 + 0.06, cz = m.d / 2 - 0.35;
+    metal.push({ g: B(0.08, 0.85, 0.08), p: [cx, 0.08, cz], c: [0.4, 0.42, 0.45] });
+    paint.push({ g: B(0.34, 0.24, 0.1), p: [cx, 0.92, cz], r: [-0.5, 0, 0], c: [0.24, 0.27, 0.3] });
+    paint.push({ g: B(0.2, 0.1, 0.02), p: [cx - 0.04, 1.02, cz + 0.07], r: [-0.5, 0, 0], c: [0.1, 0.32, 0.28] });
+    for (const [k, c] of [[0, [0.9, 0.12, 0.1]], [1, [0.15, 0.75, 0.25]], [2, [0.95, 0.75, 0.1]]]) paint.push({ g: CY(0.022, 0.022, 0.03, 8), p: [cx + 0.1, 0.95 - k * 0.06, cz + 0.08 - k * 0.03], r: [1.07, 0, 0], c });
+    paint.push({ g: B(0.04, 0.03, D / 2 - 0.2), p: [cx, 0.11, cz - D / 4 + 0.05], c: [0.1, 0.1, 0.11] });
+    // Plaque constructeur
+    paint.push({ g: B(0.4, 0.16, 0.02), p: [0, 0.3, D / 2 - 0.19], c: [0.75, 0.6, 0.15] });
+    const root = new Node();
+    root.add(meshes(bake(metal), mat([1, 1, 1], { pattern: P.metal })), meshes(bake(paint), mat([1, 1, 1], { pattern: P.plain, rough: 0.5 })));
+    return root;
+  });
+}
+// Les détails sont les mêmes pour toutes les machines d'un type : géométrie partagée
+const NODE_CACHE = {};
+function geoNode(k, f) {
+  const proto = NODE_CACHE[k] || (NODE_CACHE[k] = f());
+  const n = new Node();
+  for (const c of proto.children) { const cc = new Node(); for (const g of c.children) cc.add(mesh(g.mesh.geo, g.mesh.mat)); n.add(cc); }
+  return n;
+}
+
+// Lampadaires autour de la dalle : ils éclairent la nuit (positions partagées avec le moteur)
+export function lampPostsModel() {
+  const metal = [], bulbs = [];
+  for (const [x, z] of LAMP_POSTS) {
+    const toIn = x > 0 ? -1 : 1;
+    metal.push({ g: CY(0.07, 0.1, 3.6, 10), p: [x, 0, z], c: [0.32, 0.34, 0.37] });
+    metal.push({ g: CY(0.18, 0.2, 0.25, 10), p: [x, 0, z], c: [0.25, 0.26, 0.28] });
+    metal.push({ g: B(0.9, 0.06, 0.08), p: [x + toIn * 0.4, 3.55, z], c: [0.32, 0.34, 0.37] });
+    metal.push({ g: B(0.42, 0.12, 0.28), p: [x + toIn * 0.8, 3.45, z], c: [0.22, 0.23, 0.25] });
+    bulbs.push({ g: B(0.34, 0.03, 0.2), p: [x + toIn * 0.8, 3.43, z] });
+  }
+  const root = new Node();
+  const bulbMat = mat([1, 0.92, 0.75], { emissive: [0.1, 0.08, 0.05], cast: false });
+  root.add(meshes(bake(metal), mat([1, 1, 1], { pattern: P.metal })), meshes(bake(bulbs), bulbMat));
+  root.bulb = bulbMat;
+  return root;
+}
+export const lampLights = () => LAMP_POSTS.map(([x, z]) => [x + (x > 0 ? -0.8 : 0.8), 3.2, z]);
+
+// Ciel : grande sphère vue de l'intérieur, dessinée par le shader (dégradé, soleil, nuages, étoiles)
+export function skyModel() {
+  const g = sphere(110, 24, 12, 0);
+  for (let i = 0; i < g.nrm.length; i++) g.nrm[i] = -g.nrm[i];
+  for (let t = 0; t < g.idx.length; t += 3) { const k = g.idx[t + 1]; g.idx[t + 1] = g.idx[t + 2]; g.idx[t + 2] = k; }
+  return mesh(g, mat([1, 1, 1], { pattern: P.sky, unlit: 1, cast: false }));
 }
 
 // Chantier : dalle balisée, échafaudage qui monte avec l'avancement, fantôme de la machine
@@ -542,6 +654,37 @@ export function entrepotModel() {
   for (let k = 0; k < 9; k++) crates.push({ g: B(0.55, 0.45, 0.55), p: [-1.6 + (k % 5) * 0.8 + r() * 0.1, 0.31 + Math.floor(k / 5) * 0.75, (r() - 0.5) * 0.4], r: [0, r() * 0.3, 0], c: vary(C.wood, r, 0.15) });
   root.add(meshes(bake(crates), mat([1, 1, 1], { pattern: P.wood })));
   root.add(mesh(B(1.4, 0.5, 0.06), mat([0.9, 0.75, 0.2], { pattern: P.paint })).at(0, 2.05, D / 2 + 0.05));
+  return root;
+}
+
+// Pièce lourde d'une machine : caisse renforcée, poignées, bandes de danger et la pièce elle-même sur le dessus
+export function partModel(type) {
+  if (type === 'assembleur') return coreModel();
+  const col = HEAVY[type].col;
+  const root = new Node();
+  const body = new Node();
+  const metal = mat([1, 1, 1], { pattern: P.paint, rough: 0.5 });
+  const frame = [];
+  frame.push({ g: B(CORE.w, 0.5, CORE.d), c: [0.36, 0.37, 0.4] });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) frame.push({ g: B(0.1, 0.62, 0.1), p: [sx * (CORE.w / 2 - 0.04), 0, sz * (CORE.d / 2 - 0.04)], c: C.dark });
+  for (const s2 of [-1, 1]) frame.push({ g: B(0.3, 0.08, 0.5), p: [s2 * (CORE.w / 2 + 0.1), 0.5, 0], c: C.dark });
+  for (const x of [-0.6, -0.2, 0.2, 0.6]) frame.push({ g: SP(0.035, 6, 4), p: [x, 0.5, CORE.d / 2 + 0.005], c: [0.75, 0.76, 0.78] });
+  body.add(meshes(geo('partFrame', () => bake(frame)), metal));
+  body.add(mesh(B(CORE.w + 0.02, 0.12, CORE.d + 0.02), mat([1, 1, 1], { pattern: P.hazard })).at(0, 0.36, 0));
+  const top = mat(col, { pattern: P.paint, rough: 0.35 });
+  const steel = mat(C.steel, { pattern: P.paint, rough: 0.25 });
+  switch (type) {
+    case 'forge': body.add(mesh(B(1.1, 0.28, 0.55), top).at(0, 0.5, 0), mesh(B(0.5, 0.25, 0.4), top).at(0, 0.78, 0), mesh(B(1.3, 0.14, 0.5), steel).at(0.1, 1.0, 0)); break;
+    case 'trefileuse': case 'laminoir': for (const z of [-0.25, 0.25]) body.add(mesh(CY(0.24, 0.24, 1.3, 16, -0.65), type === 'laminoir' ? steel : top).at(0, 0.78, z).rotY(0)); body.children.slice(-2).forEach((n) => { n.rot = [0, 0, Math.PI / 2]; }); break;
+    case 'four': case 'ceramique': { const dome = mesh(SP(0.55, 14, 8), top); dome.pos = [0, 0.5, 0]; dome.scl = [1.2, 0.7, 0.9]; body.add(dome); break; }
+    case 'generateur': { const t = mesh(CY(0.45, 0.45, 0.3, 18), top); t.pos = [0, 0.8, 0]; t.rot = [Math.PI / 2, 0, 0]; body.add(t, mesh(CY(0.12, 0.12, 0.5, 10), steel).at(0, 0.62, 0)); break; }
+    case 'fonderie': body.add(mesh(CY(0.45, 0.32, 0.6, 16), top).at(0, 0.5, 0), mesh(CY(0.38, 0.38, 0.03, 16), mat([0.4, 0.15, 0.05], { emissive: [0.5, 0.15, 0.02] })).at(0, 1.08, 0)); break;
+    case 'qualite': body.add(mesh(B(1.2, 0.08, 0.08), steel).at(0, 1.1, 0), mesh(B(0.08, 0.6, 0.08), steel).at(-0.55, 0.5, 0), mesh(B(0.08, 0.6, 0.08), steel).at(0.55, 0.5, 0), mesh(B(1.0, 0.04, 0.04), mat([0.2, 0.9, 0.4], { emissive: [0.1, 0.8, 0.3] })).at(0, 0.8, 0)); break;
+    case 'recycleur': for (let k = 0; k < 4; k++) body.add(mesh(B(0.12, 0.4, 0.8), steel).at(-0.36 + k * 0.24, 0.5, 0)); body.add(mesh(B(1.2, 0.08, 0.9), top).at(0, 0.5, 0)); break;
+    default: body.add(mesh(B(1.2, 0.45, 0.8), top).at(0, 0.5, 0), mesh(CY(0.16, 0.16, 0.2, 12), steel).at(0.3, 0.95, 0), mesh(B(0.3, 0.12, 0.3), steel).at(-0.3, 0.95, 0));
+  }
+  root.add(body);
+  root.body = body;
   return root;
 }
 
@@ -651,6 +794,39 @@ export function workerModel(id) {
   head.add(mesh(CY(0.2, 0.2, 0.02, 14), mat([0.95, 0.95, 0.92], { pattern: P.paint })).at(0, 0.03, 0.02));
   head.add(mesh(B(0.08, 0.05, 0.04), mat([1, 1, 0.8], { emissive: [0.9, 0.85, 0.6] })).at(0, 0.1, 0.16));
   torso.add(head);
+  // Tenues achetées au vestiaire (onglet « Moi ») : une couleur par tenue, une tenue par emplacement
+  const om = {}, M = (k) => (om[k] = mat([1, 1, 1], { pattern: P.paint, rough: 0.55 }));
+  const acc = {
+    casquette: new Node().add(mesh(SP(0.17, 12, 6), M('casquette')).at(0, 0.06, 0), mesh(B(0.24, 0.025, 0.16), om.casquette).at(0, 0.06, 0.17)),
+    casque: new Node().add(mesh(SP(0.19, 12, 6), M('casque')).at(0, 0.06, 0), mesh(CY(0.25, 0.25, 0.025, 16), om.casque).at(0, 0.05, 0)),
+    lunettes: new Node().add(mesh(CY(0.05, 0.05, 0.05, 10), M('lunettes')).at(-0.06, 0.02, 0.13), mesh(CY(0.05, 0.05, 0.05, 10), om.lunettes).at(0.06, 0.02, 0.13),
+      mesh(TO(0.15, 0.012), mat(C.dark)).at(0, 0.03, 0)),
+    audio: new Node().add(mesh(B(0.04, 0.12, 0.1), M('audio')).at(-0.15, 0, 0), mesh(B(0.04, 0.12, 0.1), om.audio).at(0.15, 0, 0), mesh(B(0.32, 0.03, 0.05), om.audio).at(0, 0.17, 0)),
+    noeud: new Node().add(mesh(B(0.09, 0.07, 0.04), M('noeud')).at(-0.05, 0.6, 0.15), mesh(B(0.09, 0.07, 0.04), om.noeud).at(0.05, 0.6, 0.15), mesh(SP(0.025, 6, 4), om.noeud).at(0, 0.6, 0.17)),
+    echarpe: new Node().add(mesh(TO(0.16, 0.05), M('echarpe')).at(0, 0.62, 0), mesh(B(0.09, 0.3, 0.04), om.echarpe).at(0.08, 0.42, 0.16)),
+    tablier: new Node().add(mesh(B(0.42, 0.62, 0.03), M('tablier')).at(0, -0.2, 0.15)),
+    gilet: new Node().add(mesh(B(0.52, 0.5, 0.31), M('gilet')).at(0, 0.06, 0), mesh(B(0.53, 0.05, 0.32), mat([0.9, 0.9, 0.85], { emissive: [0.4, 0.4, 0.35] })).at(0, 0.2, 0), mesh(B(0.53, 0.05, 0.32), mat([0.9, 0.9, 0.85], { emissive: [0.4, 0.4, 0.35] })).at(0, 0.0, 0)),
+    sac: new Node().add(mesh(B(0.44, 0.56, 0.26), M('sac')).at(0, 0.06, -0.27), mesh(B(0.1, 0.22, 0.04), mat(C.steel)).at(0.12, 0.3, -0.42), mesh(CY(0.03, 0.03, 0.4, 6), mat(C.dark)).at(-0.12, 0.2, -0.42)),
+    cape: new Node().add(mesh(B(0.5, 0.95, 0.03), M('cape')).at(0, -0.45, -0.18)),
+    gants: new Node(),
+  };
+  const gloveL = mesh(SP(0.09, 8, 6), M('gants')), gloveR = mesh(SP(0.09, 8, 6), om.gants);
+  gloveL.pos = gloveR.pos = [0, -0.6, 0];
+  arms[0].add(gloveL); arms[1].add(gloveR);
+  acc.cape.rot = [0.12, 0, 0];
+  for (const k of ['casquette', 'casque', 'lunettes', 'audio']) head.add(acc[k]);
+  for (const k of ['noeud', 'echarpe', 'tablier', 'gilet', 'sac', 'cape']) torso.add(acc[k]);
+  const hats = [helmet, ...head.children.filter((n) => n.mesh && n.mesh.geo === CY(0.2, 0.2, 0.02, 14))];
+  root.setMe = (me) => {
+    const wear = (me && me.wear) || {}, on = new Set(Object.values(wear));
+    for (const [k, n] of Object.entries(acc)) n.visible = on.has(k);
+    gloveL.visible = gloveR.visible = on.has('gants');
+    for (const [k, m] of Object.entries(om)) m.color = hexRgb(ME_COLORS[(me && me.col && me.col[k]) || 0]);
+    // Casquette ou casque : le casque blanc de départ s'enlève ; le sac remplace la sacoche
+    for (const h of hats) h.visible = !wear.tete;
+    pack.visible = wear.dos !== 'sac';
+  };
+  root.setMe(null);
   hips.add(torso);
   root.add(hips);
   root.parts = { legs, arms, torso, pack, hips };

@@ -401,3 +401,15 @@ b.warn, .warn { color: var(--yellow); }
 .tname .mi { grid-row: span 2; width: 26px; height: 26px; }
 .tname b { font-size: 14.5px; }
 .tname small { color: var(--muted); font-size: 12px; }
+
+/* Aménagement : barre « Poser ici / Annuler » pendant qu'on choisit le nouvel emplacement */
+#place-bar { position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--yellow); border-radius: 14px; padding: 6px 8px 6px 12px; font-weight: 700; font-size: 13px; max-width: calc(100vw - 24px); }
+#place-bar[hidden] { display: none; }
+#place-bar .small-btn { min-height: 38px; padding: 0 12px; font-size: 14px; margin-top: 0; }
+#place-bar #btn-place-ok { background: var(--yellow); color: var(--ink); border: 0; }
+#place-bar #btn-place-ok:disabled { opacity: 0.4; }
+#place-msg.bad { color: var(--bad); }
+#place-msg.good { color: var(--good); }
+.swatches { gap: 6px; margin: 2px 0 8px 2px; }
+.swb { width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); padding: 0; }
+.swb.on { border-color: var(--yellow); box-shadow: 0 0 0 2px var(--yellow); }
