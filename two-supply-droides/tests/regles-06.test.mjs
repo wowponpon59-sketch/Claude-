@@ -21,7 +21,7 @@ const calm = (S) => { for (const m of Object.values(S.machines)) { m.broken = nu
 // ---------- 1. Commandes : standards au début, spéciales à partir du niveau 10 ----------
 {
   const S = load();
-  assert.ok(S.machines.quai && S.machines.emballeuse, 'quai et emballeuse construits (niveau 8)');
+  assert.ok(S.machines.quai && S.machines.conditionneur, 'quai et conditionneur construits (niveau 8)');
   let special = 0, total = 0;
   for (let k = 0; k < 60; k++) { S.orders = []; S.orderT = 0; step(S, { x: -12, z: 3, events: [] }); const o = S.orders[0]; if (!o) continue; total++; if (o.special) { special++; assert.ok(Object.keys(o.want).some((t) => t !== 'ouvrier'), 'spéciale : un métier'); } }
   assert.ok(total >= 55 && special > 5 && special < total, `commandes spéciales de temps en temps (${special}/${total})`);
@@ -31,19 +31,19 @@ const calm = (S) => { for (const m of Object.values(S.machines)) { m.broken = nu
 // ---------- 2. Emballer à la main un droïde qui suit, livrer au quai ----------
 {
   const S = load(); calm(S);
-  const emb = S.machines.emballeuse;
+  const emb = S.machines.conditionneur;
   emb.inp = { carton: 2 }; emb.out = {}; emb.operator = null;
   S.orders = [{ id: 999, want: { ouvrier: 1 }, left: { ouvrier: 1 }, special: false, t: 300, life: 300, reward: 38 }]; S.orderT = 999;
   const d = S.droids.find((x) => x.type === 'ouvrier' && x.st === 'idle') || S.droids.find((x) => x.type === 'ouvrier');
   SIM.restoreState(S); // (rien ne doit changer)
   d.st = 'follow'; d.who = 'A'; d.job = null;
   emb.operator = S.droids.find((x) => x !== d && x.type === 'ouvrier').id; // un opérateur : le joueur peut emballer un droïde standard
-  const n0 = S.droids.length, f = frontOf('emballeuse'), A = { x: f.x, z: f.z, events: [] };
+  const n0 = S.droids.length, f = frontOf('conditionneur'), A = { x: f.x, z: f.z, events: [] };
   step(S, A);
   assert.match(label(S), /Emballer : droïde standard/, label(S));
   press(S, A);
   assert.equal(S.droids.length, n0 - 1, 'le droïde est dans le carton');
-  assert.equal(emb.out.colis_ouvrier, 1, 'un colis sort de l’emballeuse');
+  assert.equal(emb.out.colis_ouvrier, 1, 'un colis sort du conditionneur');
   assert.equal(emb.inp.carton, 1, 'un carton utilisé');
   step(S, A); press(S, A); // récupérer
   assert.equal(S.players.A.sac.colis_ouvrier, 1, 'colis dans le sac');
@@ -59,29 +59,29 @@ const calm = (S) => { for (const m of Object.values(S.machines)) { m.broken = nu
 // ---------- 3. Recette « Emballer un droïde standard » : un droïde libre entre dans la machine ----------
 {
   const S = load(); calm(S);
-  const emb = S.machines.emballeuse;
+  const emb = S.machines.conditionneur;
   emb.inp = { carton: 3 }; emb.out = {}; emb.sel = ['colis']; emb.cur = 'colis';
   // deux droïdes standards : un opérateur et un libre (près de l'assembleur)
-  const mk = (id, st) => ({ id, type: 'ouvrier', x: 3, z: -7, rot: 0, st, who: null, job: st === 'work' ? 'emballeuse' : null, job2: null, task: null, carry: null, lv: S.level });
-  for (const x of S.droids) if (x.job === 'emballeuse') x.job = null;
+  const mk = (id, st) => ({ id, type: 'ouvrier', x: 3, z: -7, rot: 0, st, who: null, job: st === 'work' ? 'conditionneur' : null, job2: null, task: null, carry: null, lv: S.level });
+  for (const x of S.droids) if (x.job === 'conditionneur') x.job = null;
   S.droids.push(mk(9998, 'work'), mk(9999, 'idle'));
   emb.operator = 9998;
   for (const m of Object.values(S.machines)) if (m.type === 'assembleur') m.sel = []; // pas de nouveau droïde pendant le test
   const n0 = S.droids.length;
   let g = 0; while (!emb.out.colis_ouvrier && g++ < 30 * 30) step(S, { x: -12, z: 3, events: [] });
   assert.equal(emb.out.colis_ouvrier, 1, 'la recette emballe un droïde standard');
-  assert.equal(S.droids.length, n0 - 1, 'un droïde standard libre est entré dans l’emballeuse');
+  assert.equal(S.droids.length, n0 - 1, 'un droïde standard libre est entré dans le conditionneur');
   console.log('recette d’emballage : OK');
 }
 
 // ---------- 4. Commande spéciale : « Faire venir » le droïde demandé ----------
 {
   const S = load(); calm(S);
-  const emb = S.machines.emballeuse;
+  const emb = S.machines.conditionneur;
   emb.inp = { carton: 1 }; emb.out = {};
   const t = 'logistique';
   S.orders = [{ id: 998, want: { [t]: 1 }, left: { [t]: 1 }, special: true, t: 300, life: 300, reward: 65 }]; S.orderT = 999;
-  const f = frontOf('emballeuse'), A = { x: f.x, z: f.z, events: [] };
+  const f = frontOf('conditionneur'), A = { x: f.x, z: f.z, events: [] };
   step(S, A);
   assert.match(label(S), /Faire venir : agent logistique/, label(S));
   press(S, A);

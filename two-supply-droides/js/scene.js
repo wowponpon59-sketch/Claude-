@@ -274,6 +274,7 @@ export function updateScene(S, st, view) {
       if (a.box) a.box.pos[0] = run ? -1.2 + ((view.time * 0.6) % 1) * 2.4 : -0.6;
       if (a.parm) a.parm.rot[1] = run ? Math.sin(view.time * 3) * 0.6 : 0;
       if (a.tool) a.tool.rot[0] = run ? -0.6 + Math.abs(Math.sin(view.time * 7)) * 0.9 : 0;
+      if (a.flap) a.flap.rot[0] = run ? -Math.abs(Math.sin(view.time * 2)) * 1.4 : 0;
       if (a.piles) {
         const sig = JSON.stringify(m.inp);
         if (a.piles.sig !== sig) {

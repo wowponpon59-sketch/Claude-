@@ -1,10 +1,16 @@
-# Two Supply — Droïdes (version 0.7)
+# Two Supply — Droïdes (version 0.7.1)
 
 Usine de droïdes dans un terrain vague, en 20 niveaux, en solo (avec un coéquipier IA) ou à deux téléphones.
 
 **Jouer :** `https://wowponpon59-sketch.github.io/Claude-/two-supply-droides/`
 
 Les versions 0.2 et 0.3 restent dans l’historique Git. La version 0.1 (pain) est dans `two-supply/`.
+
+## Nouveautés de la 0.7.1
+
+- **Livrer depuis le sac** : pour livrer les matériaux d’un chantier ou payer le kit d’une formation, il faut les avoir dans son sac (avant, ce qui était à l’entrepôt comptait aussi). Les ingénieurs, eux, prennent toujours à l’entrepôt.
+- **Conditionneur** (niveau 8, avec sa pièce lourde) : il met les droïdes dans un carton ; le colis se livre au quai. L’emballeuse ne fait plus que les cartons. L’objectif du niveau 8 devient « Construire le conditionneur ». « Faire venir », la recette automatique, l’agent d’achat et le chef de production travaillent avec le conditionneur.
+- **Carte** : les débris placés près de l’usine (un par matière) sont maintenant répartis tout autour, et plus seulement vers les coins : les abords changent vraiment d’une partie à l’autre.
 
 ## Nouveautés de la 0.7
 
@@ -103,4 +109,4 @@ Deux onglets sur le même ordinateur : ajouter `?net=fake` à l’adresse.
 
 ## Tests
 
-Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3, 0.5, 0.6 et 0.7, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.
+Les scripts de test sont dans `tests/` (partie complète en 20 niveaux, règles de la 0.4.3, 0.5, 0.6, 0.7 et 0.7.1, navigateur, créatures, recyclage, droïdes coincés). Le mode d'emploi est dans `CLAUDE.md`, à la racine du dépôt.

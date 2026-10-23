@@ -109,12 +109,17 @@ export function genWorld(seed) {
   for (const [type, def] of Object.entries(NODE_TYPES)) if (!firstOf[def.item] && type !== 'epave') firstOf[def.item] = type;
   const near = Object.values(firstOf);
   for (let i = near.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [near[i], near[j]] = [near[j], near[i]]; }
+  // (un point tiré n'importe où sur le tour de l'usine, pas seulement vers les coins)
+  const W = SLAB.x1 - SLAB.x0, Dp = SLAB.z1 - SLAB.z0, per = 2 * (W + Dp);
   for (const type of near) {
     for (let g = 0; g < 400; g++) {
-      const a = R() * Math.PI * 2, d = 4 + R() * 6;
-      // point sur le pourtour de la dalle, à 4–10 m du bord
-      const cx = Math.max(SLAB.x0, Math.min(SLAB.x1, Math.cos(a) * 60)), cz = Math.max(SLAB.z0, Math.min(SLAB.z1, Math.sin(a) * 60));
-      const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+      const t = R() * per, d = 4 + R() * 8, side = (R() - 0.5) * 3;
+      let x, z;
+      if (t < W) { x = SLAB.x0 + t; z = SLAB.z0 - d; }
+      else if (t < W + Dp) { x = SLAB.x1 + d; z = SLAB.z0 + (t - W); }
+      else if (t < 2 * W + Dp) { x = SLAB.x1 - (t - W - Dp); z = SLAB.z1 + d; }
+      else { x = SLAB.x0 - d; z = SLAB.z1 - (t - 2 * W - Dp); }
+      x += side; z += side;
       if (!free(x, z, NODE_TYPES[type].r)) continue;
       place(type, x, z);
       break;

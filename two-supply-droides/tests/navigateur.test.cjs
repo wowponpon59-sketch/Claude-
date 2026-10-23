@@ -329,13 +329,13 @@ const assert = (c, m) => { if (!c) throw new Error('ÉCHEC : ' + m); console.log
     await A.evaluate(() => { window.__ts.app.sim.time = 30; });
   }
 
-  // ---------- 0.6 : commandes en haut à gauche, emballeuse « Faire venir » ----------
+  // ---------- 0.6 : commandes en haut à gauche, conditionneur « Faire venir » ----------
   console.log('0.6');
   {
     await A.evaluate(() => { const S = window.__ts.app.sim; S.orders = [{ id: 901, want: { ouvrier: 2 }, left: { ouvrier: 2 }, special: false, t: 280, life: 300, reward: 56 }, { id: 902, want: { logistique: 1 }, left: { logistique: 1 }, special: true, t: 200, life: 300, reward: 65 }]; S.orderT = 999; });
     assert(await until(A, () => { const o = document.getElementById('orders'); return !o.hidden && /2 droïdes standards/.test(o.textContent) && /agent logistique/.test(o.textContent); }), 'commandes affichées (standard et ★ spéciale)');
-    await A.evaluate(async () => { const C = await import('./js/config.js'); const S = window.__ts.app.sim; S.machines.emballeuse.inp.carton = 1; S.machines.emballeuse.out = {}; S.machines.emballeuse.broken = null; const p = C.PLOTS.find((x) => x.id === 'emballeuse'); window.__ts.tp(p.x, p.z + C.MACHINES.emballeuse.d / 2 + 0.6, Math.PI); });
-    assert(await until(A, () => /Faire venir/.test(document.getElementById('action-label').textContent)), 'emballeuse : « Faire venir » pour la commande spéciale');
+    await A.evaluate(async () => { const C = await import('./js/config.js'); const S = window.__ts.app.sim; S.machines.conditionneur.inp.carton = 1; S.machines.conditionneur.out = {}; S.machines.conditionneur.broken = null; const p = C.PLOTS.find((x) => x.id === 'conditionneur'); window.__ts.tp(p.x, p.z + C.MACHINES.conditionneur.d / 2 + 0.6, Math.PI); });
+    assert(await until(A, () => /Faire venir/.test(document.getElementById('action-label').textContent)), 'conditionneur : « Faire venir » pour la commande spéciale');
     await sleep(800);
     await A.screenshot({ path: OUT + '17-commandes.png' });
   }

@@ -1,7 +1,7 @@
-// Two Supply — Droïdes (version 0.7)
+// Two Supply — Droïdes (version 0.7.1)
 // Repère : x vers l'est, z vers le sud, y vers le haut. Unité : mètre.
 
-export const VERSION = '0.7';
+export const VERSION = '0.7.1';
 export const SAVE_KEY = 'twosupply-droides-save-v04';
 
 export const WORLD = { half: 40 };
@@ -199,7 +199,9 @@ export const MACHINES = {
   zone: { name: 'Zone des déclassés', w: 3.6, d: 2.2, recipes: [], store: true, cost: { bois: 4, fer: 2 }, desc: 'Stocke les pièces déclassées et les rebuts, à part des bonnes pièces' },
   recycleur: { name: 'Recycleur', w: 2.8, d: 2.2, noDecl: true, recipes: ['surplus', 'recyc'], cost: { fer: 5, caoutchouc: 2, fil: 2 }, desc: 'Objets en trop et rebuts → matières premières' },
   four: { name: 'Four à verre', w: 3.0, d: 2.4, recipes: ['verreF', 'silicium'], cost: { argile: 6, calcaire: 4, tole: 2, sable: 4 }, desc: 'Sable fondu : verre et silicium' },
-  emballeuse: { name: 'Emballeuse', w: 3.2, d: 2.2, recipes: ['carton', 'colis'], cost: { fer: 6, bois: 4, plastique: 3, caoutchouc: 2 }, desc: 'Cartons ; un droïde + un carton → colis' },
+  emballeuse: { name: 'Emballeuse', w: 3.2, d: 2.2, recipes: ['carton'], cost: { fer: 6, bois: 4, plastique: 3, caoutchouc: 2 }, desc: 'Bois + plastique → cartons' },
+  // Conditionneur (0.7.1) : met les droïdes dans un carton ; le colis se livre au quai
+  conditionneur: { name: 'Conditionneur', w: 3.2, d: 2.2, recipes: ['colis'], cost: { fer: 5, bois: 3, caoutchouc: 2, verre: 2 }, desc: 'Un droïde + un carton → colis' },
   quai: { name: 'Quai d’expédition', w: 4.0, d: 2.2, recipes: [], cost: { bois: 6, fer: 6 }, desc: 'Livrez les colis aux clients' },
 };
 
@@ -223,6 +225,7 @@ export const PLOTS = [
   { id: 'zone', type: 'zone', x: 0, z: 13, level: 13 },
   { id: 'emballeuse', type: 'emballeuse', x: 8.5, z: 13, level: 8 },
   { id: 'quai', type: 'quai', x: 17, z: 13, level: 8 },
+  { id: 'conditionneur', type: 'conditionneur', x: -8.5, z: 13, level: 8 },
 ];
 
 export const ENTREPOT = { x: 0, z: -1.5, w: 4.2, d: 1.8 };
@@ -243,6 +246,7 @@ export const HEAVY = {
   fonderie: { name: 'Creuset de la fonderie', col: [0.9, 0.35, 0.1] }, laminoir: { name: 'Cylindres du laminoir', col: [0.7, 0.72, 0.78] },
   qualite: { name: 'Scanner de contrôle', col: [0.9, 0.9, 0.95] }, recycleur: { name: 'Broyeur du recycleur', col: [0.35, 0.55, 0.35] },
   four: { name: 'Voûte du four à verre', col: [0.85, 0.75, 0.5] }, emballeuse: { name: 'Plieuse à cartons', col: [0.8, 0.62, 0.38] },
+  conditionneur: { name: 'Berceau du conditionneur', col: [0.3, 0.55, 0.85] },
 };
 export const needsPart = (type) => !!HEAVY[type];
 
@@ -385,9 +389,9 @@ export const LEVELS = [
     { id: 'ingenieur', text: 'Former un ingénieur (tablette de plans)' },
   ] },
   { name: 'Premières commandes', goals: [
-    { id: 'emballeuse', text: 'Construire l’emballeuse' },
+    { id: 'conditionneur', text: 'Construire le conditionneur' },
     { id: 'quai', text: 'Construire le quai d’expédition' },
-    { id: 'r8e', text: 'Satisfaire 2 commandes (droïde + carton à l’emballeuse, colis au quai)', c: ['orders+', 2] },
+    { id: 'r8e', text: 'Satisfaire 2 commandes (cartons à l’emballeuse, droïde + carton au conditionneur, colis au quai)', c: ['orders+', 2] },
     { id: 'r8c', text: 'Réparer 3 pannes', c: ['rep+', 3] },
   ] },
   { name: 'Métallurgie', goals: [

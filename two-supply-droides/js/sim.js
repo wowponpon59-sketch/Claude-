@@ -68,6 +68,8 @@ function spawnAnimal(S, home, sp) {
 // Remet en ordre un état chargé depuis une sauvegarde
 export function restoreState(S) {
   genWorld(S.seed);
+  // Chantiers ajoutés depuis la sauvegarde (ex. le conditionneur en 0.7.1)
+  for (const p of PLOTS) if (!S.plots[p.id]) S.plots[p.id] = { del: {}, ready: false, prog: 0, holder: null, built: false };
   S.layout = S.layout || {};
   applyLayout(S);
   S.fx = []; S.cd = { A: 0, B: 0 }; S.work = { A: null, B: null };
@@ -135,14 +137,8 @@ export function hqSpot(i) { return { x: ENTREPOT.x - 1.65 + (i % 4) * 1.1, z: EN
 const sacCount = (p) => sum(p.sac);
 function addSac(p, item, n) { p.sac[item] = (p.sac[item] || 0) + n; if (p.sac[item] <= 0) delete p.sac[item]; }
 function addStock(S, item, n) { S.stock[item] = (S.stock[item] || 0) + n; if (S.stock[item] <= 0) delete S.stock[item]; }
-function have(S, p, item) { return (p ? p.sac[item] || 0 : 0) + (S.stock[item] || 0); }
-function pay(S, p, cost) {
-  for (const [k, n] of Object.entries(cost)) {
-    let left = n;
-    if (p) { const t = Math.min(left, p.sac[k] || 0); addSac(p, k, -t); left -= t; }
-    addStock(S, k, -left);
-  }
-}
+// Le joueur ne donne que ce qu'il a dans son sac (pas ce qui est resté à l'entrepôt)
+const inSac = (p, item) => p.sac[item] || 0;
 export const hasType = (S, type) => Object.values(S.machines).some((m) => m.type === type);
 // Le contrôle qualité démarre quand le poste et la zone des déclassés existent
 export const qcActive = (S) => hasType(S, 'qualite') && hasType(S, 'zone');
@@ -354,9 +350,9 @@ export function targets(S, id) {
       }
       if (!near) continue;
       const miss = missingFor(S, pl.id);
-      const can = Object.entries(miss).some(([k, n]) => n > 0 && have(S, p, k) > 0);
+      const can = Object.entries(miss).some(([k, n]) => n > 0 && inSac(p, k) > 0);
       if (can) add(pl.id, d, { act: 'deliver', plot: pl.id, label: 'Apporter les matériaux' });
-      else if (sum(miss) > 0) add(pl.id, d, { off: true, label: 'Il manque : ' + fmt(miss) });
+      else if (sum(miss) > 0) add(pl.id, d, { off: true, label: 'Il manque : ' + fmt(miss) + (Object.entries(miss).some(([k, n]) => n > 0 && (S.stock[k] || 0) > 0) ? ' (prends-les à l’entrepôt)' : '') });
       else if (S.parts[pl.id] && !S.parts[pl.id].placed) add(pl.id, d, { off: true, kind: 'duo', label: `Il manque : ${HEAVY[pl.type].name.toLowerCase()} (à ramener à deux)` });
       continue;
     }
@@ -394,16 +390,16 @@ export function targets(S, id) {
       else add(pl.id, d, { off: true, label: 'Pas de commande pour l’instant' });
       continue;
     }
-    // Emballeuse : un droïde qui te suit + un carton → un colis
-    if (m.type === 'emballeuse' && fol.length && (m.operator || !fol.some((x) => DROIDS[x.type].work === 'machine'))) {
+    // Conditionneur : un droïde qui te suit + un carton → un colis
+    if (m.type === 'conditionneur' && fol.length && (m.operator || !fol.some((x) => DROIDS[x.type].work === 'machine'))) {
       const dr = fol[0], carton = (m.inp.carton || 0) + (p.sac.carton || 0);
       const what = dr.type === 'ouvrier' ? 'droïde standard' : DROIDS[dr.type].name.toLowerCase();
       if (carton > 0) add(pl.id, d, { act: 'pack', droid: dr.id, label: `Emballer : ${what} (1 carton)` });
-      else add(pl.id, d, { off: true, label: 'Il faut un carton pour emballer (recette Cartons)' });
+      else add(pl.id, d, { off: true, label: 'Il faut un carton (fabriqué à l’emballeuse)' });
       continue;
     }
-    // Emballeuse : faire venir un droïde spécialisé demandé par une commande (il vient se faire emballer)
-    if (m.type === 'emballeuse' && !(sum(m.out) > 0 && !full) && !m.broken) {
+    // Conditionneur : faire venir un droïde spécialisé demandé par une commande (il vient se faire mettre en carton)
+    if (m.type === 'conditionneur' && !(sum(m.out) > 0 && !full) && !m.broken) {
       const need = ordersNeed(S);
       const coming = (t) => S.droids.filter((x) => x.st === 'pack' && x.type === t).length;
       const t = Object.keys(need).find((k) => k !== 'ouvrier' && coming(k) < need[k] && S.droids.some((x) => x.type === k && x.st !== 'pack' && x.st !== 'spec'));
@@ -544,8 +540,8 @@ function press(S, id) {
     case 'deliver': {
       const st = S.plots[t.plot];
       for (const [k, n] of Object.entries(missingFor(S, t.plot))) {
-        const q = Math.min(n, have(S, p, k));
-        if (q > 0) { pay(S, p, { [k]: q }); st.del[k] = (st.del[k] || 0) + q; }
+        const q = Math.min(n, inSac(p, k));
+        if (q > 0) { addSac(p, k, -q); st.del[k] = (st.del[k] || 0) + q; }
       }
       checkReady(S, t.plot);
       sfx(S, id, 'drop');
@@ -628,12 +624,12 @@ function press(S, id) {
     case 'callpack': {
       const dr = S.droids.find((x) => x.id === t.droid), m = S.machines[t.key];
       if (!dr) break;
-      // le carton du sac va dans l'emballeuse
+      // le carton du sac va dans le conditionneur
       if (!(m.inp.carton > 0) && (p.sac.carton || 0) > 0) { addSac(p, 'carton', -1); m.inp.carton = 1; }
       releaseDroid(S, dr);
       dr.st = 'pack'; dr.who = null;
       sfx(S, id, 'ok');
-      toast(S, 'all', `${DROIDS[dr.type].name} en route vers l’emballeuse.`, 'info');
+      toast(S, 'all', `${DROIDS[dr.type].name} en route vers le conditionneur.`, 'info');
       break;
     }
     case 'scrap': {
@@ -721,7 +717,7 @@ function packDroid(S, p, m, dr) {
   m.out[k] = (m.out[k] || 0) + 1;
   S.stats.made[k] = (S.stats.made[k] || 0) + 1;
   sfx(S, 'all', 'won');
-  toast(S, 'all', `${ITEMS[k].name} prêt : apporte-le au quai.`, 'good');
+  toast(S, 'all', `${ITEMS[k].name} prêt au conditionneur : apporte-le au quai.`, 'good');
   return true;
 }
 
@@ -926,8 +922,8 @@ function specialize(S, id, type) {
   const dr = followers(S, id).find((d) => d.type === 'ouvrier');
   if (!dr) return;
   if (typeCount(S, type) >= MAX_PER_TYPE) { toast(S, id, `Déjà ${MAX_PER_TYPE} : ${def.name.toLowerCase()}, c’est le maximum.`, 'warn'); sfx(S, id, 'err'); return; }
-  if (have(S, p, def.kit) < 1) { toast(S, id, `Il faut un kit : ${lc(def.kit)}`, 'warn'); sfx(S, id, 'err'); return; }
-  pay(S, p, { [def.kit]: 1 });
+  if (inSac(p, def.kit) < 1) { toast(S, id, `Il faut le kit dans ton sac : ${lc(def.kit)}${(S.stock[def.kit] || 0) > 0 ? ' (il est à l’entrepôt)' : ''}`, 'warn'); sfx(S, id, 'err'); return; }
+  addSac(p, def.kit, -1);
   m.busy = dr.id;
   dr.st = 'spec'; dr.spec = type; dr.t = T.spec; dr.who = id;
   const pl = PLOT_BY_ID.atelier;
@@ -1307,10 +1303,10 @@ function droids(S, dt) {
       if (!goTo(d, f, dt, obs, 3.4)) d.st = 'go';
       else { d.st = 'work'; d.rot = Math.PI; }
     } else if (d.st === 'pack') {
-      // Appelé pour une commande : il va à l'emballeuse et s'y fait emballer (dès qu'il y a un carton)
-      const m = S.machines.emballeuse;
+      // Appelé pour une commande : il va au conditionneur et s'y fait mettre en carton (dès qu'il y a un carton)
+      const m = S.machines.conditionneur;
       if (!m) { d.st = 'idle'; continue; }
-      if (goTo(d, front(PLOT_BY_ID.emballeuse), dt, obs, 4)) packDroid(S, null, m, d);
+      if (goTo(d, front(PLOT_BY_ID.conditionneur), dt, obs, 4)) packDroid(S, null, m, d);
     } else if (d.st === 'spec') {
       d.t -= dt;
       if (d.t <= 0) {
@@ -1697,8 +1693,9 @@ const BRAINS = {
       d.task = null; d.carry = null;
     }
   },
+  // Agent d'achat packaging : commande des cartons pour le conditionneur (contre 1 plastique, il en livre 3)
   achat(S, d, dt, obs) {
-    const emb = S.machines.emballeuse;
+    const emb = S.machines.conditionneur;
     if (!d.task) {
       if (!emb || (emb.inp.carton || 0) >= 2 || !(S.stock.plastique > 0) || !emb.sel.includes('colis')) { rest(S, d, dt, obs); return; }
       addStock(S, 'plastique', -1);
@@ -1706,7 +1703,7 @@ const BRAINS = {
     }
     if (d.task.phase === 'buy') {
       if (goTo(d, S.machines.quai ? front(PLOT_BY_ID.quai) : HQ, dt, obs)) { d.task.phase = 'drop'; d.carry = 'carton'; }
-    } else if (goTo(d, front(PLOT_BY_ID.emballeuse), dt, obs)) {
+    } else if (goTo(d, front(PLOT_BY_ID.conditionneur), dt, obs)) {
       if (emb) emb.inp.carton = (emb.inp.carton || 0) + 3;
       d.task = null; d.carry = null;
     }
@@ -1725,10 +1722,10 @@ const BRAINS = {
     S.chefT -= dt;
     if (S.chefT > 0) return;
     S.chefT = 2;
-    const emb = S.machines.emballeuse;
+    const emb = S.machines.conditionneur;
     if (emb && ordersNeed(S).ouvrier && recipeAvail(S, 'colis') && !emb.sel.includes('colis')) {
       emb.sel.push('colis');
-      toast(S, 'all', 'Chef de production : l’emballeuse emballe les droïdes standards commandés.', 'info');
+      toast(S, 'all', 'Chef de production : le conditionneur met en carton les droïdes standards commandés.', 'info');
     }
   },
 };

@@ -436,6 +436,23 @@ export function machineModel(type) {
     for (let k = 0; k < 4; k++) stack.push({ g: B(0.7, 0.05, 0.5), p: [1.2, 0.1 + k * 0.06, -0.6], c: [0.72, 0.56, 0.36] });
     root.add(meshes(bake(stack), mat([1, 1, 1], { pattern: P.wood })));
     anim.box = box1; anim.parm = arm;
+  } else if (type === 'conditionneur') {
+    // Conditionneur : berceau où le droïde entre, grand carton ouvert, rabats qui se ferment, scanner bleu
+    root.add(mesh(B(3.0, 0.5, 1.9, 0.1), mat([0.28, 0.42, 0.62], { pattern: P.paint })));
+    root.add(mesh(B(1.3, 0.08, 1.3), mat(C.rubber, { pattern: P.rubber })).at(-0.6, 0.62, 0));
+    const box1 = new Node().at(-0.6, 0.66, 0);
+    const card = mat([0.78, 0.6, 0.38], { pattern: P.wood });
+    box1.add(mesh(B(1.0, 0.04, 1.0), card), mesh(B(0.04, 0.9, 1.0), card).at(-0.5, 0, 0), mesh(B(0.04, 0.9, 1.0), card).at(0.5, 0, 0), mesh(B(1.0, 0.9, 0.04), card).at(0, 0, -0.5));
+    const flap = mesh(B(1.0, 0.03, 0.5), card); flap.pos = [0, 0.9, 0.25];
+    box1.add(flap);
+    root.add(box1);
+    for (const x of [0.55, 1.25]) root.add(mesh(B(0.12, 2.0, 0.12, 0.1), mat(C.steel, { pattern: P.paint })).at(x, 0, -0.7));
+    root.add(mesh(B(0.9, 0.12, 0.14), mat(C.steel, { pattern: P.paint })).at(0.9, 2.05, -0.7));
+    const scan = mesh(B(0.7, 0.04, 0.04), mat([0.2, 0.5, 0.9], { emissive: [0.1, 0.4, 0.9] }));
+    scan.pos = [0.9, 1.4, -0.7];
+    root.add(scan);
+    root.add(mesh(B(0.7, 0.4, 0.05), mat([0.08, 0.15, 0.25], { emissive: [0.05, 0.2, 0.4] })).at(0.9, 0.9, 0.86));
+    anim.flap = flap; anim.beam = scan;
   } else if (type === 'etabli') {
     // Établi en bois, panneau à outils, étau et kits colorés
     const wood = mat(C.wood, { pattern: P.wood });

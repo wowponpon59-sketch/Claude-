@@ -303,15 +303,16 @@ const LOCK = '<svg class="lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="
 const lockedCard = (lvl, cls = 'spec-card') => `<div class="${cls} locked">${LOCK}<b>???</b><em>Niveau ${lvl + 1}</em></div>`;
 export function fillSpec(st, myId, onPick) {
   const p = st.players[myId];
-  const have = (k) => (p.sac[k] || 0) + (st.stock[k] || 0);
+  // (le kit doit être dans le sac ; on rappelle s'il en reste à l'entrepôt)
+  const have = (k) => p.sac[k] || 0;
   const body = $('spec-body');
   const html = SPEC_ORDER.map((type) => {
     const d = DROIDS[type];
     if (d.lvl > st.level) return lockedCard(d.lvl);
     const n = typeCount(st, type), full = n >= MAX_PER_TYPE;
     const ok = have(d.kit) >= 1 && !full;
-    const note = full ? `<em>${MAX_PER_TYPE} sur ${MAX_PER_TYPE} : c’est le maximum (recycle un droïde obsolète pour libérer une place)</em>` : have(d.kit) >= 1 ? `<em>${n} sur ${MAX_PER_TYPE} dans l’usine</em>` : '<em>Kit à fabriquer à l’établi des kits</em>';
-    return `<button class="spec-card" data-type="${type}" ${ok ? '' : 'disabled'} style="--c:${d.css}"><b>${d.name}</b><span class="muted">${d.desc}</span><span class="kit">${itemIcon(d.kit)} ${ITEMS[d.kit].name} · ${have(d.kit)} dispo</span>${note}</button>`;
+    const note = full ? `<em>${MAX_PER_TYPE} sur ${MAX_PER_TYPE} : c’est le maximum (recycle un droïde obsolète pour libérer une place)</em>` : have(d.kit) >= 1 ? `<em>${n} sur ${MAX_PER_TYPE} dans l’usine</em>` : (st.stock[d.kit] || 0) > 0 ? `<em>Kit à l’entrepôt (${st.stock[d.kit]}) : mets-le dans ton sac</em>` : '<em>Kit à fabriquer à l’établi des kits</em>';
+    return `<button class="spec-card" data-type="${type}" ${ok ? '' : 'disabled'} style="--c:${d.css}"><b>${d.name}</b><span class="muted">${d.desc}</span><span class="kit">${itemIcon(d.kit)} ${ITEMS[d.kit].name} · ${have(d.kit)} dans ton sac</span>${note}</button>`;
   }).join('');
   if (body.dataset.sig === html) return;
   body.dataset.sig = html;

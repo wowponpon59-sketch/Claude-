@@ -1,7 +1,7 @@
 # Dépôt de Vianney : jeu « Two Supply — Droïdes » (projet actif) et Coach Échecs
 
 Ce dépôt contient deux choses :
-- `two-supply-droides/` : **le projet en cours**, un jeu vidéo coopératif pour téléphones (version 0.7).
+- `two-supply-droides/` : **le projet en cours**, un jeu vidéo coopératif pour téléphones (version 0.7.1).
 - La racine (`index.html`, `js/`, `server.js`, `test/`) : l'application Coach Échecs, à ne pas toucher sauf demande.
 - `two-supply/` : la toute première version du jeu (v0.1, sur le pain). À garder intacte.
 
@@ -49,7 +49,7 @@ Points importants :
 - **Pièces lourdes** : `S.parts[plotId]` (dont `assembleur`, l'ancien `S.core`, migré dans `restoreState`). Emplacements tirés avec la graine (`PART_SPOTS`, `world.js`). Ingénieurs : `engineersPlan` et `engineerCarry` dans `sim.js`.
 - Outils de debug dans la page : `window.__ts` (`app`, `tp(x, z, yaw)`, `advance(secondes)`, `forceBuild(id)`, `saveGame()`…), `?net=fake` pour jouer à deux dans deux onglets, `window.__cutLinks()` pour simuler une coupure.
 
-## Règles du jeu validées par Vianney (0.7)
+## Règles du jeu validées par Vianney (0.7.1)
 
 - 20 niveaux, en alternant une nouveauté et un niveau de « rodage » (objectifs faisables avec l'existant).
 - Métiers : logistique et maintenance au niveau 3, agent de recherche au niveau 5 (objectif au niveau 6), ingénieur au niveau 7, chef de la maintenance au niveau 9, expert logistique au niveau 10, responsable qualité au niveau 13, adjoint qualité au niveau 14, puis production et process (16), achat (18), adjoint et chef de production (20). Les métiers à venir apparaissent sous cadenas « Niveau X ».
@@ -70,6 +70,9 @@ Points importants :
 - Commandes urgentes (0.7) : 25 % à partir du niveau 10, 3 minutes, prime double.
 - Colosse (0.7) : une fois par niveau à partir du niveau 5 (`GIANT`), à encercler de près à deux puis « Attraper » à deux à moins de 3 s d'écart ; +100 % de cadence installé.
 - Camion de livraison (0.7) : à partir du niveau 3, toutes les 7 min (`TRUCK`), devant un passage des ruines ; décharger à deux (un de chaque côté, garder appuyé). Le coéquipier IA aide en solo.
+- Livraison (0.7.1) : un joueur ne livre un chantier et ne paie un kit de formation qu'avec ce qu'il a dans son sac (jamais directement depuis l'entrepôt). Les ingénieurs prennent à l'entrepôt.
+- Conditionneur (0.7.1, niveau 8, pièce lourde) : droïde + carton → colis. L'emballeuse ne fait que les cartons.
+- Carte : les 11 débris « un par matière » sont tirés n'importe où sur le tour de l'usine (pas seulement aux coins).
 - Jour et nuit (0.5) : cycle de 12 minutes de jeu, lampadaires la nuit. Vianney ne veut pas de baisse automatique des détails : optimiser plutôt (aujourd'hui seule la réduction de résolution/ombres de la 0.4 reste en dernier recours).
 - Noms des machines, bâtiments et débris visibles à moins de 3 m de leur bord (`LABEL_RANGE`), créatures à 8 m.
 - Crédits gagnés en jouant. Tenues cumulables par métier ; on ne peut payer que 2 ou 3 tenues par métier avant le niveau 10 ; pack « L'intégrale » au niveau 10.
@@ -86,6 +89,7 @@ Toutes les commandes se lancent depuis la racine du dépôt.
 - `node two-supply-droides/tests/regles-05.test.mjs` : règles de la 0.5 (aménager, pièces lourdes avec 1 ou 2 ingénieurs, tenues des joueurs).
 - `node two-supply-droides/tests/regles-06.test.mjs` : règles de la 0.6 (commandes, emballage, limite par métier, durée de vie, anciennes sauvegardes).
 - `node two-supply-droides/tests/regles-07.test.mjs` : règles de la 0.7 (améliorations, commandes urgentes, Colosse, camion, en duo et en solo).
+- `node two-supply-droides/tests/regles-071.test.mjs` : règles de la 0.7.1 (livrer depuis le sac, kit depuis le sac, conditionneur, carte).
 - `node two-supply-droides/tests/recyclage.test.mjs` : calcul du recyclage.
 - `node two-supply-droides/tests/creatures.mjs` : capture des créatures en solo (objectif : au moins 9 fois sur 10).
 - `node two-supply-droides/tests/droides-coinces.mjs` : droïdes bloqués plus de 5 s (0 attendu en 0.4.3).
